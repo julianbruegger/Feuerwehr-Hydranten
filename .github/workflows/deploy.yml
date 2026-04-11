@@ -1,0 +1,33 @@
+name: Deploy to Hostpoint
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment: Hostpoint
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.HOSTPOINT_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.HOSTPOINT_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy via rsync
+        run: |
+          rsync -avz --delete \
+            --exclude 'Hostpoint Quarantined Files' \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='.claude/' \
+            -e "ssh -i ~/.ssh/deploy_key -o MACs=hmac-sha2-256 -o StrictHostKeyChecking=no" \
+            ./ \
+            ${{ secrets.HOSTPOINT_USER }}@${{ secrets.HOSTPOINT_HOST }}:/home/ataciden/www/feuerwehr.julian-bruegger.ch/
