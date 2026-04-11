@@ -1,0 +1,3 @@
+# Der Zugriffsschutz für PHP-Dateien erfolgt direkt in den jeweiligen
+# API-Dateien (api.php, wtp_api.php) über den Token-Check (auth_helper.php).
+# Ein genereller Block in der .htaccess würde die AJAX-Aufrufe verhindern.

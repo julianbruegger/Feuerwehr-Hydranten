@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0f0f14" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="description" content="Hydrantennavigator – Nächste Hydrant & Schlauchlänge berechnen" />
+  <title>🔴 Hydrantennavigator</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  <!-- ===== TOP BAR ===== -->
+  <header class="topbar">
+    <div class="topbar__logo">
+      <span class="topbar__icon">🚒</span>
+      <span class="topbar__title">Hydrantennavigator</span>
+    </div>
+    <div class="topbar__status" id="statusBadge">
+      <span class="topbar__status-dot"></span>
+      <span id="statusText">Standort ermitteln…</span>
+    </div>
+  </header>
+
+  <!-- ===== FULL-SCREEN MAP ===== -->
+  <main class="map-container">
+    <div id="map"></div>
+
+    <!-- Floating action buttons (right side) -->
+    <div class="fab-group">
+      <button class="fab" id="btnInfo" onclick="window.location.href='info.html'" title="Erklärung & Anleitung"
+        aria-label="Erklärung & Anleitung">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+          <path
+            d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" />
+        </svg>
+      </button>
+      <button class="fab" id="btnMyLocation" title="Meinen Standort zentrieren" aria-label="Meinen Standort zentrieren">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+          <path
+            d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
+        </svg>
+      </button>
+      <button class="fab fab--fire" id="btnSetFire" title="Brandposition setzen" aria-label="Brandposition setzen">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+          <path
+            d="M13.5 0.67s.74 2.65.74 4.8c0 2.06-1.35 3.73-3.41 3.73-2.07 0-3.63-1.67-3.63-3.73l.03-.36C5.21 7.51 4 10.62 4 14c0 4.42 3.58 8 8 8s8-3.58 8-8C20 8.61 17.41 3.8 13.5 0.67zM11.71 19c-1.78 0-3.22-1.4-3.22-3.14 0-1.62 1.05-2.76 2.81-3.12 1.77-.36 3.6-1.21 4.62-2.58.39 1.29.59 2.65.59 4.04 0 2.65-2.15 4.8-4.8 4.8z" />
+        </svg>
+      </button>
+      <button class="fab fab--refresh" id="btnRefresh" title="Hydranten neu laden" aria-label="Hydranten neu laden">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+          <path
+            d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" />
+        </svg>
+      </button>
+    </div>
+
+    <!-- Mode banner (shown when fire-position mode is active) -->
+    <div class="mode-banner" id="modeBanner" hidden>
+      <span>📍 Tippe auf die Karte für die Brandposition</span>
+      <button id="btnCancelFire">Abbrechen</button>
+    </div>
+  </main>
+
+  <!-- ===== BOTTOM SHEET ===== -->
+  <section class="bottom-sheet collapsed" id="bottomSheet" aria-label="Hydranten-Details">
+    <!-- Drag handle -->
+    <div class="sheet-handle" id="sheetHandle" role="button" aria-label="Sheet öffnen/schließen"></div>
+
+    <!-- Settings row -->
+    <div class="sheet-settings">
+      <label class="setting-label" for="hoseLength">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+          <path
+            d="M17 12h-5v5h5v-5zM16 1v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2h-1V1h-2zm3 18H5V8h14v11z" />
+        </svg>
+        Schlauch (m)
+      </label>
+      <input type="number" id="hoseLength" class="setting-input" value="20" min="5" max="100" step="5"
+        inputmode="numeric" aria-label="Schlauchlänge in Metern" />
+      <div class="settings-divider"></div>
+      <label class="setting-label" for="searchRadius">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+          <path
+            d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
+        </svg>
+        Radius (m)
+      </label>
+      <input type="number" id="searchRadius" class="setting-input" value="1000" min="200" max="5000" step="100"
+        inputmode="numeric" aria-label="Suchradius in Metern" />
+    </div>
+
+    <!-- Hydrant list -->
+    <div class="sheet-content" id="sheetContent">
+      <div class="empty-state" id="emptyState">Hydrantensuche wird gestartet…</div>
+      <ul class="hydrant-list" id="hydrantList" aria-label="Hydranten-Liste" hidden></ul>
+    </div>
+  </section>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="app.js"></script>
+</body>
+
+</html>

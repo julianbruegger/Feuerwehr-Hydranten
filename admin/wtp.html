@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>💧 WasserTransportPlan – Admin</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap"
+        rel="stylesheet" />
+    <style>
+        :root {
+            --bg: #0f0f14;
+            --surface: #18181f;
+            --card: #22222d;
+            --hover: #2a2a38;
+            --red: #e63946;
+            --blue: #457b9d;
+            --water: #38bdf8;
+            --green: #4ade80;
+            --text: #f1f1f5;
+            --muted: #8a8a9a;
+            --border: rgba(255, 255, 255, 0.07);
+            --radius: 14px;
+        }
+
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0
+        }
+
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100dvh;
+            -webkit-font-smoothing: antialiased
+        }
+
+        /* Topbar */
+        .topbar {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 0 16px;
+            height: 58px;
+            background: rgba(15, 15, 20, .95);
+            backdrop-filter: blur(16px);
+            border-bottom: 1px solid var(--border)
+        }
+
+        .topbar__left {
+            display: flex;
+            align-items: center;
+            gap: 10px
+        }
+
+        .topbar__title {
+            font-size: 15px;
+            font-weight: 700
+        }
+
+        .topbar__back {
+            padding: 7px 14px;
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            color: var(--muted);
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 5px
+        }
+
+        .topbar__back:hover {
+            color: var(--text);
+            border-color: rgba(255, 255, 255, .2)
+        }
+
+        /* Layout */
+        .container {
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 24px 16px 80px
+        }
+
+        .toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 20px;
+            flex-wrap: wrap
+        }
+
+        .toolbar__title {
+            font-size: 18px;
+            font-weight: 700
+        }
+
+        .btn-primary {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            padding: 10px 18px;
+            background: var(--water);
+            color: #0f172a;
+            border: none;
+            border-radius: var(--radius);
+            font-family: inherit;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: opacity .2s
+        }
+
+        .btn-primary:hover {
+            opacity: .88
+        }
+
+        /* Plan Cards */
+        #plansList {
+            display: flex;
+            flex-direction: column;
+            gap: 10px
+        }
+
+        .plan-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            overflow: hidden;
+            animation: fadeIn .2s ease
+        }
+
+        .plan-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px;
+            cursor: pointer;
+            transition: background .2s
+        }
+
+        .plan-header:hover {
+            background: var(--hover)
+        }
+
+        .plan-icon {
+            font-size: 24px;
+            width: 42px;
+            height: 42px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(56, 189, 248, .1);
+            border: 1px solid rgba(56, 189, 248, .3);
+            border-radius: 10px;
+            flex-shrink: 0
+        }
+
+        .plan-meta {
+            flex: 1;
+            min-width: 0
+        }
+
+        .plan-name {
+            font-size: 15px;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis
+        }
+
+        .plan-coords {
+            font-size: 12px;
+            color: var(--muted);
+            margin-top: 2px
+        }
+
+        .plan-actions {
+            display: flex;
+            gap: 6px;
+            flex-shrink: 0
+        }
+
+        .icon-btn {
+            width: 34px;
+            height: 34px;
+            border: none;
+            border-radius: 8px;
+            background: var(--bg);
+            color: var(--muted);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 15px;
+            transition: background .15s, color .15s
+        }
+
+        .icon-btn:hover {
+            background: var(--hover);
+            color: var(--text)
+        }
+
+        .icon-btn.del:hover {
+            color: var(--red)
+        }
+
+        /* Plan Detail (ausgeklappt) */
+        .plan-detail {
+            border-top: 1px solid var(--border);
+            padding: 16px;
+            display: none
+        }
+
+        .plan-detail.open {
+            display: block
+        }
+
+        .plan-desc {
+            font-size: 13px;
+            color: var(--muted);
+            line-height: 1.6;
+            white-space: pre-wrap;
+            margin-bottom: 16px
+        }
+
+        /* Datei-Upload */
+        .files-section label.upload-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 11px 16px;
+            background: var(--bg);
+            border: 1.5px dashed var(--border);
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 13px;
+            color: var(--muted);
+            transition: border-color .2s, color .2s;
+            margin-bottom: 10px
+        }
+
+        .files-section label.upload-label:hover {
+            border-color: var(--water);
+            color: var(--water)
+        }
+
+        /* Datei-Liste */
+        .file-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px
+        }
+
+        .file-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 10px
+        }
+
+        .file-icon {
+            font-size: 18px;
+            flex-shrink: 0
+        }
+
+        .file-name {
+            flex: 1;
+            font-size: 13px;
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis
+        }
+
+        .file-size {
+            font-size: 11px;
+            color: var(--muted);
+            flex-shrink: 0
+        }
+
+        .file-btn {
+            padding: 5px 12px;
+            border: none;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity .15s
+        }
+
+        .file-btn.view {
+            background: rgba(56, 189, 248, .12);
+            color: var(--water)
+        }
+
+        .file-btn.del {
+            background: rgba(230, 57, 70, .1);
+            color: var(--red)
+        }
+
+        .file-btn:hover {
+            opacity: .8
+        }
+
+        /* Empty */
+        .empty {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--muted);
+            font-size: 14px
+        }
+
+        .empty-icon {
+            font-size: 48px;
+            margin-bottom: 12px
+        }
+
+        /* Modal */
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, .7);
+            backdrop-filter: blur(4px);
+            z-index: 200;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            animation: fadeIn .2s
+        }
+
+        .modal-backdrop.hidden {
+            display: none
+        }
+
+        .modal {
+            background: var(--surface);
+            border-radius: 20px 20px 0 0;
+            border-top: 1px solid var(--border);
+            padding: 24px 20px;
+            padding-bottom: max(24px, env(safe-area-inset-bottom));
+            width: 100%;
+            max-width: 600px;
+            max-height: 92dvh;
+            overflow-y: auto;
+            animation: slideUp .3s ease
+        }
+
+        .modal-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 20px
+        }
+
+        .form-field {
+            margin-bottom: 14px
+        }
+
+        .form-label {
+            display: block;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .5px;
+            color: var(--muted);
+            margin-bottom: 6px
+        }
+
+        .form-input,
+        .form-textarea {
+            width: 100%;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            color: var(--text);
+            font-family: inherit;
+            font-size: 16px;
+            padding: 11px 14px;
+            outline: none;
+            transition: border-color .2s
+        }
+
+        .form-input:focus,
+        .form-textarea:focus {
+            border-color: var(--water)
+        }
+
+        .form-textarea {
+            height: 110px;
+            resize: vertical
+        }
+
+        .coords-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px
+        }
+
+        .modal-hint {
+            font-size: 12px;
+            color: var(--muted);
+            margin-top: 4px
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px
+        }
+
+        .btn-cancel {
+            flex: 1;
+            padding: 13px;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            color: var(--text);
+            font-family: inherit;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer
+        }
+
+        .btn-save {
+            flex: 2;
+            padding: 13px;
+            background: var(--water);
+            border: none;
+            border-radius: var(--radius);
+            color: #0f172a;
+            font-family: inherit;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer
+        }
+
+        .btn-save:disabled {
+            opacity: .5;
+            cursor: not-allowed
+        }
+
+        .status-msg {
+            font-size: 12px;
+            color: var(--green);
+            margin-top: 8px;
+            text-align: center
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0
+            }
+
+            to {
+                opacity: 1
+            }
+        }
+
+        @keyframes slideUp {
+            from {
+                transform: translateY(30px);
+                opacity: 0
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <header class="topbar">
+        <div class="topbar__left">
+            <span style="font-size:22px">💧</span>
+            <span class="topbar__title">WasserTransportPläne</span>
+        </div>
+        <a href="/admin/" class="topbar__back">← Admin</a>
+    </header>
+
+    <div class="container">
+        <div class="toolbar">
+            <span class="toolbar__title" id="deptLabel">Lade…</span>
+            <button class="btn-primary" id="btnNew">＋ Neuer Plan</button>
+        </div>
+        <div id="plansList">
+            <div class="empty">
+                <div class="empty-icon">⏳</div>
+                <p>Lade Pläne…</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal -->
+    <div class="modal-backdrop hidden" id="modalBackdrop">
+        <div class="modal">
+            <div class="modal-title" id="modalTitle">Neuer WasserTransportPlan</div>
+            <input type="hidden" id="editId" />
+            <div class="form-field">
+                <label class="form-label" for="fName">Plan-Name *</label>
+                <input class="form-input" type="text" id="fName" placeholder="z.B. WTP Industriestrasse" />
+            </div>
+            <div class="form-field">
+                <label class="form-label" for="fDesc">Beschreibung / Notizen</label>
+                <textarea class="form-textarea" id="fDesc"
+                    placeholder="Routenführung, Tankstellen, Besonderheiten…"></textarea>
+            </div>
+            <div class="form-field">
+                <label class="form-label">Koordinaten (Kartenmarker)</label>
+                <div class="coords-row">
+                    <input class="form-input" type="number" id="fLat" placeholder="Breitengrad" step="any" />
+                    <input class="form-input" type="number" id="fLng" placeholder="Längengrad" step="any" />
+                </div>
+                <div class="modal-hint">Tipp: In der Karte auf 🔥 Brandposition setzen und Koordinaten aus der URL
+                    kopieren.</div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-cancel" id="btnCancel">Abbrechen</button>
+                <button class="btn-save" id="btnSave">Speichern</button>
+            </div>
+            <div class="status-msg hidden" id="statusMsg"></div>
+        </div>
+    </div>
+
+    <!-- Hidden file input -->
+    <input type="file" id="fileInput" style="display:none" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx" />
+
+    <script>
+        'use strict';
+        const token = localStorage.getItem('hw_token');
+
+        function clearAuth() {
+            localStorage.removeItem('hw_token');
+            localStorage.removeItem('hw_dept_name');
+            localStorage.removeItem('hw_expires');
+            window.location.href = '/login.php';
+        }
+
+        if (!token || Date.now() > parseInt(localStorage.getItem('hw_expires') || 0, 10)) clearAuth();
+
+        // ── Cached DOM refs ──────────────────────────────────────────────────────────
+        const $deptLabel = document.getElementById('deptLabel');
+        const $plansList = document.getElementById('plansList');
+        const $modalBackdrop = document.getElementById('modalBackdrop');
+        const $modalTitle = document.getElementById('modalTitle');
+        const $editId = document.getElementById('editId');
+        const $fName = document.getElementById('fName');
+        const $fDesc = document.getElementById('fDesc');
+        const $fLat = document.getElementById('fLat');
+        const $fLng = document.getElementById('fLng');
+        const $btnSave = document.getElementById('btnSave');
+        const $statusMsg = document.getElementById('statusMsg');
+        const $fileInput = document.getElementById('fileInput');
+
+        $deptLabel.textContent = (localStorage.getItem('hw_dept_name') || 'Feuerwehr') + ' – WTP';
+
+        // ── API-Helper ──────────────────────────────────────────────────────────────
+        async function api(action, id, body, planId) {
+            let url = `/admin/wtp_api.php?action=${encodeURIComponent(action)}`;
+            if (id) url += `&id=${encodeURIComponent(id)}`;
+            if (planId) url += `&plan_id=${encodeURIComponent(planId)}`;
+            try {
+                const res = await fetch(url, {
+                    method: body ? 'POST' : 'GET',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: body ? JSON.stringify(body) : undefined,
+                });
+                if (res.status === 401) clearAuth();
+                const data = await res.json();
+                if (data.error) { alert('Fehler: ' + data.error); return null; }
+                return data;
+            } catch {
+                alert('Netzwerkfehler – bitte erneut versuchen.');
+                return null;
+            }
+        }
+
+        async function uploadFile(planId, file) {
+            const fd = new FormData();
+            fd.append('file', file);
+            try {
+                const res = await fetch(`/admin/wtp_api.php?action=upload&plan_id=${encodeURIComponent(planId)}`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` },
+                    body: fd,
+                });
+                if (res.status === 401) clearAuth();
+                return res.json();
+            } catch {
+                alert('Upload fehlgeschlagen – bitte erneut versuchen.');
+                return { error: 'Netzwerkfehler' };
+            }
+        }
+
+        async function loadFiles(planId) {
+            try {
+                const res = await fetch(`/admin/wtp_api.php?action=files&plan_id=${encodeURIComponent(planId)}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                return res.json();
+            } catch {
+                return [];
+            }
+        }
+
+        // ── Icons ───────────────────────────────────────────────────────────────────
+        function fileIcon(mime) {
+            if (mime?.includes('pdf')) return '📄';
+            if (mime?.includes('image')) return '🖼️';
+            if (mime?.includes('word')) return '📝';
+            if (mime?.includes('sheet') || mime?.includes('excel')) return '📊';
+            return '📎';
+        }
+        function formatSize(bytes) {
+            if (bytes > 1048576) return (bytes / 1048576).toFixed(1) + ' MB';
+            return Math.round(bytes / 1024) + ' KB';
+        }
+
+        // ── State ───────────────────────────────────────────────────────────────────
+        let allPlans = [];
+        let openPlanId = null;
+
+        // ── Pläne laden ─────────────────────────────────────────────────────────────
+        async function loadPlans() {
+            const data = await api('list');
+            allPlans = Array.isArray(data) ? data : [];
+            renderPlans();
+        }
+
+        function renderPlans() {
+            if (allPlans.length === 0) {
+                $plansList.innerHTML = `<div class="empty"><div class="empty-icon">💧</div><p>Noch keine WasserTransportPläne.</p></div>`;
+                return;
+            }
+            $plansList.innerHTML = allPlans.map(p => `
+    <div class="plan-card" data-id="${p.id}">
+      <div class="plan-header" data-action="toggle" data-id="${p.id}">
+        <div class="plan-icon">💧</div>
+        <div class="plan-meta">
+          <div class="plan-name">${esc(p.name)}</div>
+          <div class="plan-coords">${p.lat && p.lng ? p.lat + ', ' + p.lng : 'Keine Koordinaten'} · ${p.file_count} Datei(en)</div>
+        </div>
+        <div class="plan-actions">
+          <button class="icon-btn" title="Bearbeiten" data-action="edit" data-id="${p.id}">✏️</button>
+          <button class="icon-btn del" title="Löschen" data-action="delete-plan" data-id="${p.id}">🗑️</button>
+        </div>
+      </div>
+      <div class="plan-detail" id="detail-${p.id}">
+        <p class="plan-desc">${esc(p.description || 'Keine Beschreibung.')}</p>
+        <div class="files-section">
+          <label class="upload-label" data-action="upload" data-plan-id="${p.id}">
+            📎 Datei hochladen (PDF, Bild, Word, Excel – max. 20 MB)
+          </label>
+          <div class="file-list" id="files-${p.id}">
+            <p style="font-size:13px;color:var(--muted)">Lade Dateien…</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+        }
+
+        function esc(s) {
+            return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        // ── Event Delegation ────────────────────────────────────────────────────────
+        let uploadTargetPlanId = null;
+
+        $plansList.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-action]');
+            if (!btn) return;
+            const action = btn.dataset.action;
+            const id = +btn.dataset.id;
+
+            if (action === 'edit') { e.stopPropagation(); openEdit(id); }
+            else if (action === 'delete-plan') { e.stopPropagation(); deletePlan(id); }
+            else if (action === 'toggle') toggleDetail(id);
+            else if (action === 'upload') { uploadTargetPlanId = +btn.dataset.planId; $fileInput.click(); }
+            else if (action === 'view-file') viewFile(+btn.dataset.fileId);
+            else if (action === 'delete-file') deleteFile(+btn.dataset.fileId, +btn.dataset.planId);
+        });
+
+        // ── Detail auf-/zuklappen ───────────────────────────────────────────────────
+        async function toggleDetail(planId) {
+            const el = document.getElementById(`detail-${planId}`);
+            const isOpen = el.classList.toggle('open');
+            if (isOpen && planId !== openPlanId) {
+                openPlanId = planId;
+                await refreshFileList(planId);
+            }
+        }
+
+        async function refreshFileList(planId) {
+            const filesEl = document.getElementById(`files-${planId}`);
+            if (!filesEl) return;
+            const files = await loadFiles(planId);
+
+            if (!Array.isArray(files) || files.length === 0) {
+                filesEl.innerHTML = '<p style="font-size:13px;color:var(--muted)">Noch keine Dateien.</p>';
+                return;
+            }
+            filesEl.innerHTML = files.map(f => `
+    <div class="file-item">
+      <span class="file-icon">${fileIcon(f.mime_type)}</span>
+      <span class="file-name" title="${esc(f.original_name)}">${esc(f.original_name)}</span>
+      <span class="file-size">${formatSize(f.file_size)}</span>
+      <button class="file-btn view" data-action="view-file" data-file-id="${f.id}">Öffnen</button>
+      <button class="file-btn del" data-action="delete-file" data-file-id="${f.id}" data-plan-id="${planId}">✕</button>
+    </div>
+  `).join('');
+        }
+
+        // ── Datei-Upload ────────────────────────────────────────────────────────────
+        $fileInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file || !uploadTargetPlanId) return;
+            e.target.value = '';
+
+            const targetId = uploadTargetPlanId;
+            const filesEl = document.getElementById(`files-${targetId}`);
+            if (filesEl) filesEl.innerHTML = '<p style="font-size:13px;color:var(--muted)">Uploading…</p>';
+
+            const result = await uploadFile(targetId, file);
+            if (result.error) { alert('Fehler: ' + result.error); }
+            // Refresh file list and update file count in parallel
+            await Promise.all([refreshFileList(targetId), loadPlans()]);
+        });
+
+        // ── Datei öffnen / löschen ──────────────────────────────────────────────────
+        function viewFile(fileId) {
+            window.open(`/admin/wtp_api.php?action=download&file_id=${encodeURIComponent(fileId)}&token=${encodeURIComponent(token)}`, '_blank');
+        }
+
+        async function deleteFile(fileId, planId) {
+            if (!confirm('Datei unwiderruflich löschen?')) return;
+            const result = await api('file_delete', fileId);
+            if (result) await Promise.all([refreshFileList(planId), loadPlans()]);
+        }
+
+        // ── Plan löschen ────────────────────────────────────────────────────────────
+        async function deletePlan(id) {
+            const p = allPlans.find(x => x.id == id);
+            if (!confirm(`Plan "${p?.name}" und alle Dateien löschen?`)) return;
+            const result = await api('delete', id);
+            if (result) await loadPlans();
+        }
+
+        // ── Modal ────────────────────────────────────────────────────────────────────
+        function openModal(plan = null) {
+            $modalTitle.textContent = plan ? 'Plan bearbeiten' : 'Neuer WasserTransportPlan';
+            $editId.value = plan?.id || '';
+            $fName.value = plan?.name || '';
+            $fDesc.value = plan?.description || '';
+            $fLat.value = plan?.lat || '';
+            $fLng.value = plan?.lng || '';
+            $statusMsg.classList.add('hidden');
+            $modalBackdrop.classList.remove('hidden');
+            $fName.focus();
+        }
+        function closeModal() { $modalBackdrop.classList.add('hidden'); }
+
+        function openEdit(id) { openModal(allPlans.find(p => p.id == id)); }
+        document.getElementById('btnNew').addEventListener('click', () => openModal());
+        document.getElementById('btnCancel').addEventListener('click', closeModal);
+        $modalBackdrop.addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
+
+        $btnSave.addEventListener('click', async () => {
+            const id = $editId.value;
+            const name = $fName.value.trim();
+            if (!name) { alert('Plan-Name erforderlich.'); return; }
+
+            $btnSave.disabled = true;
+            $btnSave.textContent = 'Speichern…';
+
+            const result = await api(id ? 'update' : 'create', id || null, {
+                name,
+                description: $fDesc.value.trim(),
+                lat: parseFloat($fLat.value) || null,
+                lng: parseFloat($fLng.value) || null,
+            });
+            if (result) {
+                closeModal();
+                await loadPlans();
+            }
+            $btnSave.disabled = false;
+            $btnSave.textContent = 'Speichern';
+        });
+
+        // ── Start ─────────────────────────────────────────────────────────────────────
+        loadPlans();
+    </script>
+</body>
+
+</html>

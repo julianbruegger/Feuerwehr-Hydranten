@@ -1,0 +1,3 @@
+# Blockiert direkten HTTP-Zugriff auf alle hochgeladenen Dateien.
+# Dateien werden nur über admin/wtp_api.php?action=download (mit Auth) ausgeliefert.
+Deny from all

@@ -1,0 +1,585 @@
+/* =====================================================================
+   Hydrantennavigator – style.css
+   Mobil-First, Dark-Theme, Premium Design
+   ===================================================================== */
+
+/* ----- CSS Variablen / Design Tokens ----- */
+:root {
+  --bg-base: #0f0f14;
+  --bg-surface: #18181f;
+  --bg-card: #22222d;
+  --bg-card-hover: #2a2a38;
+  --accent-red: #e63946;
+  --accent-red-dim: #7a1c23;
+  --accent-amber: #f4a261;
+  --accent-blue: #457b9d;
+  --text-primary: #f1f1f5;
+  --text-secondary: #8a8a9a;
+  --text-muted: #55556a;
+  --border: rgba(255, 255, 255, 0.07);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.7);
+  --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --radius-card: 16px;
+  --radius-pill: 999px;
+  --topbar-h: 56px;
+  --font: 'Inter', system-ui, sans-serif;
+  --transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  /* Höhe der ausgeklappten Sheet-Ansicht */
+  --sheet-expanded-h: 65dvh;
+}
+
+/* ----- Reset & Base ----- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  font-family: var(--font);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  touch-action: manipulation;
+}
+
+/* ----- Topbar ----- */
+.topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--topbar-h);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  background: rgba(15, 15, 20, 0.94);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+  /* Safe area für iPhone Notch */
+  padding-top: env(safe-area-inset-top, 0);
+  height: calc(var(--topbar-h) + env(safe-area-inset-top, 0));
+}
+
+.topbar__logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.topbar__icon {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.topbar__title {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+
+.topbar__status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  padding: 5px 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  max-width: 160px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topbar__status-dot {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: background var(--transition);
+}
+
+/* Status-Varianten */
+.topbar__status--ready .topbar__status-dot {
+  background: #4ade80;
+  box-shadow: 0 0 6px #4ade80;
+}
+
+.topbar__status--loading .topbar__status-dot {
+  background: var(--accent-amber);
+  animation: pulse 1s infinite;
+}
+
+.topbar__status--error .topbar__status-dot {
+  background: var(--accent-red);
+}
+
+.topbar__status--fire .topbar__status-dot {
+  background: var(--accent-red);
+  animation: pulse 0.6s infinite;
+}
+
+@keyframes pulse {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.3;
+  }
+}
+
+/* ----- Map Container – füllt den gesamten Bereich unter der Topbar ----- */
+.map-container {
+  position: fixed;
+  /* Karte geht bis unter die Bottom-Sheet (Sheet überlagert die Karte) */
+  top: calc(var(--topbar-h) + env(safe-area-inset-top, 0));
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 0;
+}
+
+#map {
+  width: 100%;
+  height: 100%;
+  background: var(--bg-base);
+}
+
+/* ----- Floating Action Buttons ----- */
+.fab-group {
+  position: absolute;
+  right: 12px;
+  /* Vom oberen Rand der Karte (nicht der Seite) aus positionieren */
+  top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 500;
+}
+
+.fab {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(24, 24, 31, 0.92);
+  color: var(--text-primary);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-card), 0 0 0 1px var(--border);
+  transition: transform var(--transition), background var(--transition);
+  -webkit-tap-highlight-color: transparent;
+  /* Mindest-Tipp-Ziel für Mobilgeräte */
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.fab:active {
+  transform: scale(0.88);
+}
+
+.fab--fire {
+  color: var(--accent-red);
+}
+
+.fab--fire.active {
+  background: var(--accent-red);
+  color: #fff;
+  box-shadow: 0 0 0 1px var(--accent-red), 0 6px 20px rgba(230, 57, 70, 0.5);
+}
+
+.fab--refresh svg {
+  color: var(--accent-blue);
+}
+
+.fab--refresh.loading svg {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ----- Mode Banner ----- */
+.mode-banner {
+  position: absolute;
+  /* Über dem Bottom-Sheet, aber innerhalb der Karte */
+  bottom: 100px;
+  left: 12px;
+  right: 12px;
+  background: var(--accent-red);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 13px 16px;
+  border-radius: var(--radius-card);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  box-shadow: 0 6px 24px rgba(230, 57, 70, 0.45);
+  z-index: 600;
+  animation: slideUp 0.3s ease;
+}
+
+.mode-banner[hidden] {
+  display: none;
+}
+
+.mode-banner button {
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 7px 16px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(16px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* ----- Bottom Sheet – überlagert die Karte von unten ----- */
+.bottom-sheet {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 800;
+  background: var(--bg-surface);
+  border-top: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 20px 20px 0 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.65);
+  /* Explizite Höhe für glatte CSS-Animation */
+  height: var(--sheet-expanded-h);
+  transition: height 0.38s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Eingeklappt: nur Handle-Balken + Settings-Zeile sichtbar */
+.bottom-sheet.collapsed {
+  height: 84px;
+}
+
+/* Drag Handle */
+.sheet-handle {
+  flex-shrink: 0;
+  /* Großes Touch-Ziel */
+  padding: 14px 0 8px;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sheet-handle::after {
+  content: '';
+  display: block;
+  width: 36px;
+  height: 4px;
+  background: var(--text-muted);
+  border-radius: var(--radius-pill);
+  transition: background var(--transition);
+}
+
+.sheet-handle:hover::after,
+.sheet-handle:active::after {
+  background: var(--text-secondary);
+}
+
+/* Settings row */
+.sheet-settings {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.setting-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.setting-label svg {
+  flex-shrink: 0;
+}
+
+.setting-input {
+  width: 68px;
+  flex-shrink: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-primary);
+  font-family: var(--font);
+  font-size: 15px;
+  font-weight: 700;
+  text-align: center;
+  padding: 7px 6px;
+  outline: none;
+  transition: border-color var(--transition);
+  /* iOS verhindert Zoom bei font-size < 16px */
+  font-size: 16px;
+}
+
+.setting-input:focus {
+  border-color: var(--accent-red);
+}
+
+/* Trennstrich zwischen den zwei Einstellungen */
+.settings-divider {
+  width: 1px;
+  height: 28px;
+  background: var(--border);
+  flex-shrink: 0;
+  margin: 0 2px;
+}
+
+/* Sheet Content (scrollbar Hydrantenliste) */
+.sheet-content {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  /* Safe area für Home-Balken auf iPhone */
+  padding-bottom: env(safe-area-inset-bottom, 12px);
+  /* Sicherstellen dass es im collapsed-Zustand vom overflow:hidden geclippt wird */
+  min-height: 0;
+}
+
+/* Empty State */
+.empty-state {
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 14px;
+  padding: 20px 16px;
+}
+
+/* Hydrant List */
+.hydrant-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 12px 4px;
+}
+
+.hydrant-item {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  /* Großes Touch-Ziel */
+  padding: 14px 16px;
+  display: grid;
+  grid-template-columns: 40px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+  -webkit-tap-highlight-color: transparent;
+  animation: fadeIn 0.25s ease both;
+  /* Mindesthöhe für Touch */
+  min-height: 60px;
+}
+
+.hydrant-item:active {
+  background: var(--bg-card-hover);
+}
+
+.hydrant-item.nearest {
+  border-color: var(--accent-red);
+  background: rgba(230, 57, 70, 0.08);
+}
+
+.hydrant-item.selected {
+  border-color: var(--accent-amber);
+  background: rgba(244, 162, 97, 0.1);
+}
+
+/* Rank badge */
+.hydrant-rank {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--bg-base);
+  border: 2px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.hydrant-item.nearest .hydrant-rank {
+  border-color: var(--accent-red);
+  color: var(--accent-red);
+  background: rgba(230, 57, 70, 0.12);
+}
+
+/* Info */
+.hydrant-info {
+  min-width: 0;
+}
+
+.hydrant-name {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hydrant-address {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Hose stats */
+.hydrant-hose {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex-shrink: 0;
+  gap: 2px;
+}
+
+.hose-count {
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.hose-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.hose-dist {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ----- Leaflet Overrides ----- */
+.leaflet-container {
+  background: var(--bg-base) !important;
+  font-family: var(--font) !important;
+}
+
+.leaflet-popup-content-wrapper {
+  background: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 14px !important;
+  box-shadow: var(--shadow-card) !important;
+}
+
+.leaflet-popup-tip {
+  background: var(--bg-card) !important;
+}
+
+.leaflet-popup-content {
+  margin: 12px 14px !important;
+  font-family: var(--font) !important;
+  font-size: 13px !important;
+  line-height: 1.6 !important;
+}
+
+.leaflet-popup-content b {
+  color: var(--accent-red);
+  font-size: 15px;
+}
+
+/* Zoom-Steuerung anpassen auf Dark Mode */
+.leaflet-control-zoom a {
+  background: rgba(24, 24, 31, 0.92) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border) !important;
+  backdrop-filter: blur(12px);
+}
+
+.leaflet-control-zoom a:hover {
+  background: var(--bg-card) !important;
+}
+
+/* Accuracy circle */
+.leaflet-interactive.accuracy-circle {
+  stroke: var(--accent-blue);
+  fill: var(--accent-blue);
+  fill-opacity: 0.06;
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+
+/* Attribution kleiner machen auf Mobile */
+.leaflet-control-attribution {
+  font-size: 9px !important;
+  opacity: 0.7;
+}
+
+/* ----- Animationen ----- */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

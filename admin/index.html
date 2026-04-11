@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>🔒 Admin – Hydrantennavigator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap"
+        rel="stylesheet" />
+    <style>
+        :root {
+            --bg: #0f0f14;
+            --surface: #18181f;
+            --card: #22222d;
+            --hover: #2a2a38;
+            --red: #e63946;
+            --amber: #f4a261;
+            --green: #4ade80;
+            --blue: #457b9d;
+            --text: #f1f1f5;
+            --muted: #8a8a9a;
+            --border: rgba(255, 255, 255, 0.07);
+            --radius: 14px;
+        }
+
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100dvh;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* ─── Topbar ─── */
+        .topbar {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 0 16px;
+            height: 58px;
+            background: rgba(15, 15, 20, 0.95);
+            backdrop-filter: blur(16px);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .topbar__left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .topbar__dept {
+            font-size: 15px;
+            font-weight: 700;
+        }
+
+        .topbar__badge {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--red);
+            background: rgba(230, 57, 70, 0.12);
+            border: 1px solid rgba(230, 57, 70, 0.3);
+            padding: 3px 10px;
+            border-radius: 999px;
+        }
+
+        .btn-logout {
+            padding: 7px 14px;
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            color: var(--muted);
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: color 0.2s, border-color 0.2s;
+        }
+
+        .btn-logout:hover {
+            color: var(--red);
+            border-color: var(--red);
+        }
+
+        /* ─── Layout ─── */
+        .container {
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 24px 16px 80px;
+        }
+
+        /* ─── Toolbar ─── */
+        .toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .toolbar__title {
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .btn-primary {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            padding: 10px 18px;
+            background: var(--red);
+            color: #fff;
+            border: none;
+            border-radius: var(--radius);
+            font-family: inherit;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: opacity 0.2s;
+            white-space: nowrap;
+        }
+
+        .btn-primary:hover {
+            opacity: 0.88;
+        }
+
+        /* ─── Kategorie-Filter ─── */
+        .filters {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+
+        .filter-btn {
+            padding: 6px 14px;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            color: var(--muted);
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .filter-btn.active {
+            background: rgba(230, 57, 70, 0.12);
+            border-color: var(--red);
+            color: var(--red);
+        }
+
+        /* ─── Entry Cards ─── */
+        #entriesList {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .entry-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px;
+            cursor: pointer;
+            transition: background 0.2s, border-color 0.2s;
+            animation: fadeIn 0.2s ease;
+        }
+
+        .entry-card:hover {
+            background: var(--hover);
+        }
+
+        .entry-header {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+
+        .entry-cat-icon {
+            font-size: 22px;
+            flex-shrink: 0;
+            width: 38px;
+            height: 38px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+        }
+
+        .entry-meta {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .entry-title {
+            font-size: 15px;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .entry-address {
+            font-size: 12px;
+            color: var(--muted);
+            margin-top: 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .entry-actions {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+
+        .icon-btn {
+            width: 34px;
+            height: 34px;
+            border: none;
+            border-radius: 8px;
+            background: var(--bg);
+            color: var(--muted);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 15px;
+            transition: background 0.15s, color 0.15s;
+        }
+
+        .icon-btn:hover {
+            background: var(--hover);
+            color: var(--text);
+        }
+
+        .icon-btn.delete:hover {
+            color: var(--red);
+        }
+
+        .entry-content {
+            font-size: 13px;
+            color: var(--muted);
+            margin-top: 10px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .entry-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid var(--border);
+        }
+
+        .cat-badge {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 3px 10px;
+            border-radius: 999px;
+            background: var(--bg);
+            color: var(--muted);
+            border: 1px solid var(--border);
+        }
+
+        .map-btn {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--blue);
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        /* ─── Nav Cards ─── */
+        .nav-cards {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 10px;
+            margin-bottom: 24px;
+        }
+
+        .nav-card {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 16px;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            text-decoration: none;
+            color: var(--text);
+            transition: background 0.2s, border-color 0.2s;
+        }
+
+        .nav-card:hover {
+            background: var(--hover);
+        }
+
+        .nav-card--water {
+            border-color: rgba(56, 189, 248, 0.3);
+        }
+
+        .nav-card--water:hover {
+            border-color: #38bdf8;
+        }
+
+        .nav-card__icon {
+            font-size: 24px;
+            width: 44px;
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(56, 189, 248, 0.1);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            border-radius: 12px;
+            flex-shrink: 0;
+        }
+
+        .nav-card__meta {
+            flex: 1;
+        }
+
+        .nav-card__title {
+            font-size: 15px;
+            font-weight: 600;
+        }
+
+        .nav-card__sub {
+            font-size: 12px;
+            color: var(--muted);
+            margin-top: 2px;
+        }
+
+        .nav-card__arrow {
+            font-size: 18px;
+            color: var(--muted);
+        }
+
+        /* ─── Empty state ─── */
+        .empty {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .empty-icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+        }
+
+        /* ─── Modal ─── */
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+            z-index: 200;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            padding: 0;
+            animation: fadeIn 0.2s;
+        }
+
+        .modal-backdrop.hidden {
+            display: none;
+        }
+
+        .modal {
+            background: var(--surface);
+            border-radius: 20px 20px 0 0;
+            border-top: 1px solid var(--border);
+            padding: 24px 20px;
+            padding-bottom: max(24px, env(safe-area-inset-bottom));
+            width: 100%;
+            max-width: 600px;
+            max-height: 92dvh;
+            overflow-y: auto;
+            animation: slideUp 0.3s ease;
+        }
+
+        .modal-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 20px;
+        }
+
+        .form-field {
+            margin-bottom: 16px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--muted);
+            margin-bottom: 6px;
+        }
+
+        .form-input,
+        .form-select,
+        .form-textarea {
+            width: 100%;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            color: var(--text);
+            font-family: inherit;
+            font-size: 16px;
+            padding: 11px 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .form-input:focus,
+        .form-select:focus,
+        .form-textarea:focus {
+            border-color: var(--red);
+        }
+
+        .form-select {
+            appearance: none;
+        }
+
+        .form-textarea {
+            height: 120px;
+            resize: vertical;
+        }
+
+        .coords-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .btn-cancel {
+            flex: 1;
+            padding: 13px;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            color: var(--text);
+            font-family: inherit;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .btn-save {
+            flex: 2;
+            padding: 13px;
+            background: var(--red);
+            border: none;
+            border-radius: var(--radius);
+            color: #fff;
+            font-family: inherit;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .btn-save:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideUp {
+            from {
+                transform: translateY(30px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Topbar -->
+    <header class="topbar">
+        <div class="topbar__left">
+            <span style="font-size:22px">🔒</span>
+            <span class="topbar__dept" id="deptName">Lade…</span>
+            <span class="topbar__badge">GEHEIM</span>
+        </div>
+        <button class="btn-logout" id="btnLogout">Abmelden</button>
+    </header>
+
+    <div class="container">
+        <div class="toolbar">
+            <span class="toolbar__title">Sensible Einträge</span>
+            <button class="btn-primary" id="btnNew">
+                <span>＋</span> Neuer Eintrag
+            </button>
+        </div>
+
+        <!-- WasserTransportPlan Nav -->
+        <div class="nav-cards">
+            <a href="/admin/wtp.html" class="nav-card nav-card--water">
+                <div class="nav-card__icon">💧</div>
+                <div class="nav-card__meta">
+                    <div class="nav-card__title">WasserTransportPläne</div>
+                    <div class="nav-card__sub">Pläne verwalten, Notizen &amp; Dateien hochladen</div>
+                </div>
+                <span class="nav-card__arrow">›</span>
+            </a>
+        </div>
+
+        <!-- Kategorie-Filter -->
+        <div class="filters">
+            <button class="filter-btn active" data-cat="">Alle</button>
+            <button class="filter-btn" data-cat="schluessel">🔑 Schlüssel</button>
+            <button class="filter-btn" data-cat="gefahrgut">⚠️ Gefahrgut</button>
+            <button class="filter-btn" data-cat="gebaeude">🏢 Gebäude</button>
+            <button class="filter-btn" data-cat="kontakt">📞 Kontakt</button>
+            <button class="filter-btn" data-cat="sonstiges">📋 Sonstiges</button>
+        </div>
+
+        <!-- Einträge-Liste -->
+        <div id="entriesList">
+            <div class="empty">
+                <div class="empty-icon">⏳</div>
+                <p>Lade Einträge…</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Eintrag erstellen/bearbeiten -->
+    <div class="modal-backdrop hidden" id="modalBackdrop">
+        <div class="modal" id="modal">
+            <div class="modal-title" id="modalTitle">Neuer Eintrag</div>
+            <input type="hidden" id="editId" value="" />
+
+            <div class="form-field">
+                <label class="form-label" for="fTitle">Objektname / Adresse *</label>
+                <input class="form-input" type="text" id="fTitle" placeholder="z.B. Luzernstrasse 12" />
+            </div>
+            <div class="form-field">
+                <label class="form-label" for="fAddress">Detailadresse</label>
+                <input class="form-input" type="text" id="fAddress" placeholder="Optional" />
+            </div>
+            <div class="form-field">
+                <label class="form-label">Koordinaten (optional, für Kartenmarker)</label>
+                <div class="coords-row">
+                    <input class="form-input" type="number" id="fLat" placeholder="Breitengrad" step="any" />
+                    <input class="form-input" type="number" id="fLng" placeholder="Längengrad" step="any" />
+                </div>
+            </div>
+            <div class="form-field">
+                <label class="form-label" for="fCat">Kategorie</label>
+                <select class="form-select" id="fCat">
+                    <option value="schluessel">🔑 Schlüssel / Zugang</option>
+                    <option value="gefahrgut">⚠️ Gefahrgut</option>
+                    <option value="gebaeude">🏢 Gebäudeinfo</option>
+                    <option value="kontakt">📞 Kontaktperson</option>
+                    <option value="sonstiges" selected>📋 Sonstiges</option>
+                </select>
+            </div>
+            <div class="form-field">
+                <label class="form-label" for="fContent">Notiz *</label>
+                <textarea class="form-textarea" id="fContent" placeholder="Sensible Details hier eintragen…"></textarea>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-cancel" id="btnCancel">Abbrechen</button>
+                <button class="btn-save" id="btnSave">Speichern</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        'use strict';
+        // ─── Auth-Check ───────────────────────────────────────────────────────
+        const token = localStorage.getItem('hw_token');
+        const deptName = localStorage.getItem('hw_dept_name') || 'Feuerwehr';
+        const expires = parseInt(localStorage.getItem('hw_expires') || '0', 10);
+
+        function clearAuth() {
+            localStorage.removeItem('hw_token');
+            localStorage.removeItem('hw_dept_name');
+            localStorage.removeItem('hw_expires');
+            window.location.href = '/login.php';
+        }
+
+        if (!token || Date.now() > expires) clearAuth();
+
+        // ─── Cached DOM refs ──────────────────────────────────────────────────
+        const $deptName = document.getElementById('deptName');
+        const $entriesList = document.getElementById('entriesList');
+        const $modalBackdrop = document.getElementById('modalBackdrop');
+        const $modalTitle = document.getElementById('modalTitle');
+        const $editId = document.getElementById('editId');
+        const $fTitle = document.getElementById('fTitle');
+        const $fAddress = document.getElementById('fAddress');
+        const $fLat = document.getElementById('fLat');
+        const $fLng = document.getElementById('fLng');
+        const $fCat = document.getElementById('fCat');
+        const $fContent = document.getElementById('fContent');
+        const $btnSave = document.getElementById('btnSave');
+
+        $deptName.textContent = deptName;
+
+        // ─── API-Helper ───────────────────────────────────────────────────────
+        async function api(action, id, body) {
+            const url = `/admin/api.php?action=${encodeURIComponent(action)}${id ? '&id=' + encodeURIComponent(id) : ''}`;
+            try {
+                const res = await fetch(url, {
+                    method: body ? 'POST' : 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: body ? JSON.stringify(body) : undefined,
+                });
+                if (res.status === 401) clearAuth();
+                const data = await res.json();
+                if (data.error) { alert('Fehler: ' + data.error); return null; }
+                return data;
+            } catch {
+                alert('Netzwerkfehler – bitte erneut versuchen.');
+                return null;
+            }
+        }
+
+        // ─── Kategorien ───────────────────────────────────────────────────────
+        const CAT_ICONS = {
+            schluessel: '🔑',
+            gefahrgut: '⚠️',
+            gebaeude: '🏢',
+            kontakt: '📞',
+            sonstiges: '📋',
+        };
+        const CAT_LABELS = {
+            schluessel: 'Schlüssel',
+            gefahrgut: 'Gefahrgut',
+            gebaeude: 'Gebäude',
+            kontakt: 'Kontakt',
+            sonstiges: 'Sonstiges',
+        };
+
+        // ─── State ───────────────────────────────────────────────────────────
+        let allEntries = [];
+        let activeFilter = '';
+
+        // ─── Einträge laden & rendern ─────────────────────────────────────────
+        async function loadEntries() {
+            const data = await api('list');
+            allEntries = Array.isArray(data) ? data : [];
+            renderEntries();
+        }
+
+        function renderEntries() {
+            const filtered = activeFilter
+                ? allEntries.filter(e => e.category === activeFilter)
+                : allEntries;
+
+            if (filtered.length === 0) {
+                $entriesList.innerHTML = `
+          <div class="empty">
+            <div class="empty-icon">🗂️</div>
+            <p>${activeFilter ? 'Keine Einträge in dieser Kategorie.' : 'Noch keine Einträge vorhanden.'}</p>
+          </div>`;
+                return;
+            }
+
+            $entriesList.innerHTML = filtered.map(e => `
+        <div class="entry-card" data-id="${e.id}">
+          <div class="entry-header">
+            <div class="entry-cat-icon">${CAT_ICONS[e.category] || '📋'}</div>
+            <div class="entry-meta">
+              <div class="entry-title">${esc(e.title)}</div>
+              <div class="entry-address">${esc(e.address || '')}</div>
+            </div>
+            <div class="entry-actions">
+              <button class="icon-btn" title="Bearbeiten" data-action="edit" data-id="${e.id}">✏️</button>
+              <button class="icon-btn delete" title="Löschen" data-action="delete" data-id="${e.id}">🗑️</button>
+            </div>
+          </div>
+          <div class="entry-content">${esc(e.content || '')}</div>
+          <div class="entry-footer">
+            <span class="cat-badge">${CAT_LABELS[e.category] || e.category}</span>
+            ${e.lat && e.lng
+                    ? `<button class="map-btn" data-action="map" data-lat="${e.lat}" data-lng="${e.lng}">🗺️ Auf Karte anzeigen</button>`
+                    : ''}
+          </div>
+        </div>
+      `).join('');
+        }
+
+        function esc(str) {
+            return String(str)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        // ─── Event Delegation für Einträge-Liste ──────────────────────────────
+        $entriesList.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-action]');
+            if (!btn) return;
+            e.stopPropagation();
+            const action = btn.dataset.action;
+            if (action === 'edit') openEdit(+btn.dataset.id);
+            else if (action === 'delete') deleteEntry(+btn.dataset.id);
+            else if (action === 'map') window.open(`/?lat=${btn.dataset.lat}&lng=${btn.dataset.lng}`, '_blank');
+        });
+
+        // ─── Filter (Event Delegation) ────────────────────────────────────────
+        document.querySelector('.filters').addEventListener('click', (e) => {
+            const btn = e.target.closest('.filter-btn');
+            if (!btn) return;
+            document.querySelector('.filter-btn.active')?.classList.remove('active');
+            btn.classList.add('active');
+            activeFilter = btn.dataset.cat;
+            renderEntries();
+        });
+
+        // ─── Modal ────────────────────────────────────────────────────────────
+        function openModal(entry = null) {
+            $modalTitle.textContent = entry ? 'Eintrag bearbeiten' : 'Neuer Eintrag';
+            $editId.value = entry?.id || '';
+            $fTitle.value = entry?.title || '';
+            $fAddress.value = entry?.address || '';
+            $fLat.value = entry?.lat || '';
+            $fLng.value = entry?.lng || '';
+            $fCat.value = entry?.category || 'sonstiges';
+            $fContent.value = entry?.content || '';
+            $modalBackdrop.classList.remove('hidden');
+            $fTitle.focus();
+        }
+
+        function closeModal() {
+            $modalBackdrop.classList.add('hidden');
+        }
+
+        function openEdit(id) {
+            const entry = allEntries.find(e => e.id == id);
+            if (entry) openModal(entry);
+        }
+
+        document.getElementById('btnNew').addEventListener('click', () => openModal());
+        document.getElementById('btnCancel').addEventListener('click', closeModal);
+        $modalBackdrop.addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) closeModal();
+        });
+
+        $btnSave.addEventListener('click', async () => {
+            const id = $editId.value;
+            const title = $fTitle.value.trim();
+            const content = $fContent.value.trim();
+            if (!title || !content) { alert('Titel und Notiz sind Pflichtfelder.'); return; }
+
+            $btnSave.disabled = true;
+            $btnSave.textContent = 'Speichern…';
+
+            const payload = {
+                title,
+                address: $fAddress.value.trim(),
+                lat: parseFloat($fLat.value) || null,
+                lng: parseFloat($fLng.value) || null,
+                category: $fCat.value,
+                content,
+            };
+
+            const result = await api(id ? 'update' : 'create', id || null, payload);
+            if (result) {
+                closeModal();
+                await loadEntries();
+            }
+            $btnSave.disabled = false;
+            $btnSave.textContent = 'Speichern';
+        });
+
+        // ─── Löschen ─────────────────────────────────────────────────────────
+        async function deleteEntry(id) {
+            const entry = allEntries.find(e => e.id == id);
+            if (!confirm(`"${entry?.title}" wirklich löschen?`)) return;
+            const result = await api('delete', id);
+            if (result) await loadEntries();
+        }
+
+        // ─── Logout ──────────────────────────────────────────────────────────
+        document.getElementById('btnLogout').addEventListener('click', async () => {
+            try {
+                await fetch('/logout.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token }),
+                });
+            } catch { /* ignore logout errors */ }
+            clearAuth();
+        });
+
+        // ─── Start ───────────────────────────────────────────────────────────
+        loadEntries();
+    </script>
+</body>
+
+</html>
