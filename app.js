@@ -17,14 +17,51 @@
 
 /** Standardwerte */
 const DEFAULTS = {
-    HOSE_LENGTH_M: 20,    // Meter pro Schlauch
-    SEARCH_RADIUS_M: 1000,  // Suchradius in Metern
-    MAX_RESULTS: 15,    // Maximale Anzahl angezeigter Hydranten
-    ROAD_FACTOR: 1.3,   // Straßenfaktor (Luftlinie → geschätzte Gehstrecke)
+    HOSE_LENGTH_M: 20,          // Meter pro Schlauch
+    SEARCH_RADIUS_M: 2000,      // Suchradius in Metern (groß genug für Routen-Umwege)
+    MAX_RESULTS: 15,            // Maximale Anzahl angezeigter Hydranten
+    MAX_OSRM_CANDIDATES: 50,    // Maximale Hydranten-Kandidaten für OSRM-Routing
 };
 
 /** Overpass API Endpunkt */
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+
+// ─────────────────────────────────────────
+// Hydrant-Cache (localStorage, 24h TTL)
+// ─────────────────────────────────────────
+
+const CACHE_TTL_MS   = 24 * 60 * 60 * 1000; // 24 Stunden
+const CACHE_GRID_DEG = 0.005;                // ~500 m Raster-Snap
+
+function _cacheKey(pos, radius) {
+    const lat = Math.round(pos.lat / CACHE_GRID_DEG) * CACHE_GRID_DEG;
+    const lng = Math.round(pos.lng / CACHE_GRID_DEG) * CACHE_GRID_DEG;
+    return `hw_hydrants_${lat.toFixed(3)}_${lng.toFixed(3)}_${radius}`;
+}
+
+function getCachedHydrants(pos, radius) {
+    try {
+        const raw = localStorage.getItem(_cacheKey(pos, radius));
+        if (!raw) return null;
+        const { ts, elements } = JSON.parse(raw);
+        if (Date.now() - ts > CACHE_TTL_MS) return null;
+        return elements;
+    } catch { return null; }
+}
+
+function setCachedHydrants(pos, radius, elements) {
+    try {
+        // Alte Einträge bereinigen um localStorage-Platz freizuhalten
+        for (const key of Object.keys(localStorage)) {
+            if (!key.startsWith('hw_hydrants_')) continue;
+            try {
+                const { ts } = JSON.parse(localStorage.getItem(key));
+                if (Date.now() - ts > CACHE_TTL_MS) localStorage.removeItem(key);
+            } catch { localStorage.removeItem(key); }
+        }
+        localStorage.setItem(_cacheKey(pos, radius), JSON.stringify({ ts: Date.now(), elements }));
+    } catch { /* localStorage voll oder deaktiviert – ignorieren */ }
+}
 
 // ─────────────────────────────────────────
 // App-Zustand
@@ -35,12 +72,17 @@ const state = {
     userPos: null,         // { lat, lng } – GPS-Standort
     firePos: null,         // { lat, lng } – Manuell gesetzte Brandposition (oder null)
     hydrants: [],           // Array von Hydrant-Objekten (mit Distanz)
+    barrierSegments: [],   // Liniensegmente von Gewässern & Bahnlinien
+    passwaySegments: [],   // Liniensegmente von Brücken & Tunneln
     markers: {
         user: null,         // Leaflet Marker für Benutzer
         fire: null,         // Leaflet Marker für Brandposition
         accuracy: null,         // Genauigkeitskreis
-        hydrants: [],           // Leaflet Marker für Hydranten
+        hydrants: [],           // Leaflet Marker für Hydranten (Top-Ergebnisse)
+        allHydrants: [],        // Leaflet Marker für alle Hydranten (Overlay)
+        route: null,            // Leaflet Polyline für Route zum Hydranten
     },
+    showAllHydrants: false,
     fireMode: false,        // Ist Brandpositions-Modus aktiv?
     selectedHydrantId: null,        // Aktuell ausgewählter Hydrant
     watchId: null,         // GPS-Watch-ID
@@ -56,6 +98,7 @@ const dom = {
     statusText: document.getElementById('statusText'),
     btnMyLocation: document.getElementById('btnMyLocation'),
     btnSetFire: document.getElementById('btnSetFire'),
+    btnToggleAll: document.getElementById('btnToggleAll'),
     btnRefresh: document.getElementById('btnRefresh'),
     modeBanner: document.getElementById('modeBanner'),
     btnCancelFire: document.getElementById('btnCancelFire'),
@@ -71,29 +114,44 @@ const dom = {
 // Karten-Icons
 // ─────────────────────────────────────────
 
-/** Erstellt ein rotes Hydrant-Icon */
-function createHydrantIcon(rank, isNearest) {
+/** Erstellt ein Hydrant-Icon, optional mit Barriere-Warnung */
+function createHydrantIcon(rank, isNearest, barrierTypes) {
+    const hasBarrier = barrierTypes && barrierTypes.size > 0;
     const color = isNearest ? '#e63946' : '#8a8a9a';
+    const borderColor = hasBarrier ? '#f4a261' : color;
     const scale = isNearest ? 1.15 : 1;
+    const size = Math.round(34 * scale);
+
+    // Kleines Barriere-Badge oben rechts
+    const barrierBadge = hasBarrier ? `<div style="
+      position:absolute; top:-4px; right:-4px;
+      width:16px; height:16px;
+      background:#f4a261;
+      border-radius:50%;
+      display:flex; align-items:center; justify-content:center;
+      font-size:9px; line-height:1;
+      box-shadow:0 1px 4px rgba(0,0,0,0.5);
+    ">${barrierTypes.has('water') && barrierTypes.has('rail') ? '⚠' : barrierTypes.has('water') ? '🌊' : '🚂'}</div>` : '';
+
     return L.divIcon({
         className: '',
-        html: `<div style="
-      width:${Math.round(34 * scale)}px;
-      height:${Math.round(34 * scale)}px;
-      background:${isNearest ? 'rgba(230,57,70,0.15)' : 'rgba(24,24,31,0.9)'};
-      border:2.5px solid ${color};
-      border-radius:50%;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      font-size:${isNearest ? '14' : '12'}px;
-      font-weight:700;
-      color:${color};
-      font-family:Inter,sans-serif;
-      box-shadow:0 2px 10px rgba(0,0,0,0.5)${isNearest ? ',0 0 12px rgba(230,57,70,0.4)' : ''};
-      backdrop-filter:blur(8px);
-    ">${rank}</div>`,
-        iconSize: [Math.round(34 * scale), Math.round(34 * scale)],
+        html: `<div style="position:relative; width:${size}px; height:${size}px;">
+      <div style="
+        width:${size}px; height:${size}px;
+        background:${isNearest ? 'rgba(230,57,70,0.15)' : 'rgba(24,24,31,0.9)'};
+        border:2.5px solid ${borderColor};
+        border-radius:50%;
+        display:flex; align-items:center; justify-content:center;
+        font-size:${isNearest ? '14' : '12'}px;
+        font-weight:700;
+        color:${borderColor};
+        font-family:Inter,sans-serif;
+        box-shadow:0 2px 10px rgba(0,0,0,0.5)${isNearest ? ',0 0 12px rgba(230,57,70,0.4)' : ''};
+        backdrop-filter:blur(8px);
+      ">${rank}</div>
+      ${barrierBadge}
+    </div>`,
+        iconSize: [size, size],
         iconAnchor: [Math.round(17 * scale), Math.round(17 * scale)],
         popupAnchor: [0, -Math.round(20 * scale)],
     });
@@ -207,6 +265,13 @@ function onPositionError(error) {
         3: 'GPS-Zeitüberschreitung',
     };
     setStatus(messages[error.code] || 'GPS-Fehler', 'error');
+
+    // Fallback: Hydranten an der aktuellen Kartenansicht laden
+    if (!state.userPos && !state.firePos) {
+        const center = state.map.getCenter();
+        state.userPos = { lat: center.lat, lng: center.lng };
+        fetchHydrants();
+    }
 }
 
 function updateUserMarker(pos, accuracy) {
@@ -296,55 +361,110 @@ async function fetchHydrants() {
 
     const radius = parseInt(dom.searchRadius.value, 10) || DEFAULTS.SEARCH_RADIUS_M;
 
-    setStatus('Hydranten laden…', 'loading');
     dom.btnRefresh.classList.add('loading');
 
-    // Overpass QL Query: Alle Feuerhydranten im Radius
-    const query = `
-    [out:json][timeout:25];
-    node["emergency"="fire_hydrant"](around:${radius},${pos.lat},${pos.lng});
-    out body;
+    // Cache prüfen
+    const cached = getCachedHydrants(pos, radius);
+    if (cached) {
+        setStatus('Bereit (Cache)', 'ready');
+        dom.btnRefresh.classList.remove('loading');
+        processHydrantData(cached);
+    } else {
+        setStatus('Hydranten laden…', 'loading');
+
+        const hydrantQuery = `
+        [out:json][timeout:15];
+        node["emergency"="fire_hydrant"](around:${radius},${pos.lat},${pos.lng});
+        out body;
+      `;
+
+        try {
+            const response = await fetch(OVERPASS_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'data=' + encodeURIComponent(hydrantQuery),
+            });
+
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+            const data = await response.json();
+            setCachedHydrants(pos, radius, data.elements || []);
+            processHydrantData(data.elements || []);
+            setStatus(state.firePos ? 'Brandposition gesetzt' : 'Bereit', state.firePos ? 'fire' : 'ready');
+        } catch (error) {
+            console.error({ error }, 'Overpass-Abruf fehlgeschlagen');
+            showEmptyState(`Fehler beim Laden: ${error.message}`);
+            setStatus('Ladefehler', 'error');
+        } finally {
+            dom.btnRefresh.classList.remove('loading');
+        }
+    }
+
+    // Barrieren + Brücken separat im Hintergrund laden (eigener Radius-Cap)
+    fetchBarriers(pos, Math.min(radius, 1500));
+}
+
+async function fetchBarriers(pos, radius) {
+    const barrierQuery = `
+    [out:json][timeout:30];
+    (
+      way["waterway"~"^(river|stream|canal)$"](around:${radius},${pos.lat},${pos.lng});
+      way["railway"~"^(rail|tram|subway|light_rail|narrow_gauge)$"](around:${radius},${pos.lat},${pos.lng});
+      way["highway"]["bridge"="yes"](around:${radius},${pos.lat},${pos.lng});
+      way["highway"]["tunnel"="yes"](around:${radius},${pos.lat},${pos.lng});
+    );
+    out geom;
   `;
 
     try {
         const response = await fetch(OVERPASS_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: 'data=' + encodeURIComponent(query),
+            body: 'data=' + encodeURIComponent(barrierQuery),
         });
-
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
+        if (!response.ok) return;
         const data = await response.json();
-        processHydrantData(data.elements || []);
-        setStatus(state.firePos ? 'Brandposition gesetzt' : 'Bereit', state.firePos ? 'fire' : 'ready');
-    } catch (error) {
-        console.error({ error }, 'Overpass-Abruf fehlgeschlagen');
-        showEmptyState(`Fehler beim Laden: ${error.message}`);
-        setStatus('Ladefehler', 'error');
-    } finally {
-        dom.btnRefresh.classList.remove('loading');
+        processBarrierData(data.elements || []);
+        sortAndRenderHydrants(); // Neu rendern mit Barriere-Infos
+    } catch (e) {
+        console.warn('Barrieren konnten nicht geladen werden', e);
     }
 }
 
 function processHydrantData(elements) {
-    // Rohe OSM-Knoten zu internen Hydrant-Objekten umwandeln
     state.hydrants = elements.map((el) => ({
         id: el.id,
         lat: el.lat,
         lng: el.lon,
         tags: el.tags || {},
-        distM: 0,   // wird in sortAndRenderHydrants gesetzt
+        distM: 0,
+        barrierTypes: new Set(),
     }));
-
     sortAndRenderHydrants();
+}
+
+function processBarrierData(elements) {
+    state.barrierSegments = [];
+    state.passwaySegments = [];
+    elements.filter(el => el.type === 'way').forEach(way => {
+        const tags = way.tags || {};
+        const isPassway = tags.bridge === 'yes' || tags.tunnel === 'yes';
+        const isBarrier = tags.waterway || tags.railway;
+        if (!isPassway && !isBarrier) return;
+        const geom = way.geometry || [];
+        for (let i = 0; i < geom.length - 1; i++) {
+            const seg = { lat1: geom[i].lat, lng1: geom[i].lon, lat2: geom[i + 1].lat, lng2: geom[i + 1].lon };
+            if (isPassway) state.passwaySegments.push(seg);
+            else state.barrierSegments.push({ ...seg, type: tags.waterway ? 'water' : 'rail' });
+        }
+    });
 }
 
 // ─────────────────────────────────────────
 // Sortierung, Berechnung & Rendering
 // ─────────────────────────────────────────
 
-function sortAndRenderHydrants() {
+async function sortAndRenderHydrants() {
     const pos = getSourcePosition();
     if (!pos || state.hydrants.length === 0) {
         showEmptyState('Keine Hydranten in der Nähe gefunden.');
@@ -354,18 +474,104 @@ function sortAndRenderHydrants() {
 
     const hoseLength = parseFloat(dom.hoseLength.value) || DEFAULTS.HOSE_LENGTH_M;
 
-    // Luftlinien-Distanz berechnen & Ergebnis sortieren
+    // Phase 1: Sofort nach Luftlinie rendern
     state.hydrants.forEach((h) => {
         h.distM = haversineDistance(pos, { lat: h.lat, lng: h.lng });
+        h.barrierTypes = getBarrierCrossings(pos, { lat: h.lat, lng: h.lng });
+        h.routeDistM = null;
+        h.routeDurationS = Infinity;
     });
-
     state.hydrants.sort((a, b) => a.distM - b.distM);
 
-    const visible = state.hydrants.slice(0, DEFAULTS.MAX_RESULTS);
+    clearHydrantMarkers();
+    renderHydrantList(state.hydrants.slice(0, DEFAULTS.MAX_RESULTS), hoseLength);
+    renderHydrantMarkers(state.hydrants.slice(0, DEFAULTS.MAX_RESULTS), pos, hoseLength);
+    if (state.showAllHydrants) renderAllHydrantMarkers();
+
+    // Phase 2: Top-N nach Luftlinie per OSRM Table API routen, dann neu sortieren.
+    // Kandidaten-Cap verhindert viele API-Batches bei dichter Bebauung im großen Radius.
+    // Die nach Luftlinie nächsten N Hydranten decken in der Praxis auch die straßenmäßig
+    // nächsten ab — außer bei starken Barrieren, wo ein größerer Luftlinienradius hilft.
+    const candidates = state.hydrants.slice(0, DEFAULTS.MAX_OSRM_CANDIDATES);
+    try {
+        const coords = [`${pos.lng},${pos.lat}`, ...candidates.map(h => `${h.lng},${h.lat}`)].join(';');
+        const res = await fetch(
+            `${OSRM_BASE}/table/v1/driving/${coords}?sources=0&annotations=duration,distance`
+        );
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (data.code !== 'Ok') throw new Error(data.message);
+
+        const durations = data.durations[0];
+        const distances = data.distances?.[0];
+        candidates.forEach((h, i) => {
+            h.routeDurationS = durations[i + 1] ?? Infinity;
+            h.routeDistM = distances?.[i + 1] ?? null;
+        });
+
+        candidates.sort((a, b) => {
+            if (!isFinite(a.routeDurationS) && !isFinite(b.routeDurationS)) return a.distM - b.distM;
+            if (!isFinite(a.routeDurationS)) return 1;
+            if (!isFinite(b.routeDurationS)) return -1;
+            return a.routeDurationS - b.routeDurationS;
+        });
+    } catch (e) {
+        console.warn('OSRM table routing fehlgeschlagen, Luftlinie wird beibehalten', e);
+    }
 
     clearHydrantMarkers();
-    renderHydrantList(visible, hoseLength);
-    renderHydrantMarkers(visible, pos, hoseLength);
+    renderHydrantList(candidates.slice(0, DEFAULTS.MAX_RESULTS), hoseLength);
+    renderHydrantMarkers(candidates.slice(0, DEFAULTS.MAX_RESULTS), pos, hoseLength);
+    if (state.showAllHydrants) renderAllHydrantMarkers();
+}
+
+/** Berechnet den Schnittpunkt zweier Liniensegmente (gibt {lat,lng} oder null zurück) */
+function getIntersectionPoint(a1, a2, b1, b2) {
+    const dx1 = a2.lng - a1.lng, dy1 = a2.lat - a1.lat;
+    const dx2 = b2.lng - b1.lng, dy2 = b2.lat - b1.lat;
+    const denom = dx1 * dy2 - dy1 * dx2;
+    if (Math.abs(denom) < 1e-12) return null;
+    const dx3 = b1.lng - a1.lng, dy3 = b1.lat - a1.lat;
+    const t = (dx3 * dy2 - dy3 * dx2) / denom;
+    const u = (dx3 * dy1 - dy3 * dx1) / denom;
+    if (t > 0.01 && t < 0.99 && u >= 0 && u <= 1) {
+        return { lat: a1.lat + t * dy1, lng: a1.lng + t * dx1 };
+    }
+    return null;
+}
+
+/** Nächste Distanz (Meter) von Punkt p zum Liniensegment a→b */
+function distPointToSegmentM(p, a, b) {
+    const dx = b.lng - a.lng, dy = b.lat - a.lat;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq < 1e-18) return haversineDistance(p, a);
+    const t = Math.max(0, Math.min(1, ((p.lng - a.lng) * dx + (p.lat - a.lat) * dy) / lenSq));
+    return haversineDistance(p, { lat: a.lat + t * dy, lng: a.lng + t * dx });
+}
+
+/** Prüft ob am Kreuzungspunkt eine Brücke oder ein Tunnel vorhanden ist (≤ 25 m) */
+function crossingIsPassable(point) {
+    return state.passwaySegments.some(seg =>
+        distPointToSegmentM(point,
+            { lat: seg.lat1, lng: seg.lng1 },
+            { lat: seg.lat2, lng: seg.lng2 }
+        ) <= 25
+    );
+}
+
+/** Gibt Set mit Barriere-Typen zurück, die den Luftlinienweg kreuzen und keine Brücke/Tunnel haben */
+function getBarrierCrossings(from, to) {
+    const types = new Set();
+    state.barrierSegments.forEach(seg => {
+        const crossing = getIntersectionPoint(from, to,
+            { lat: seg.lat1, lng: seg.lng1 },
+            { lat: seg.lat2, lng: seg.lng2 }
+        );
+        if (crossing && !crossingIsPassable(crossing)) {
+            types.add(seg.type);
+        }
+    });
+    return types;
 }
 
 /** Haversine-Formel – Luftlinie in Metern */
@@ -381,13 +587,9 @@ function haversineDistance(a, b) {
 
 function toRad(deg) { return deg * Math.PI / 180; }
 
-/**
- * Berechnet die Anzahl der benötigten Schläuche.
- * Verwendet Luftlinie × Straßenfaktor, aufgerundet.
- */
-function calcHoseSections(distAirlineM, hoseLengthM) {
-    const estimatedRoadDist = distAirlineM * DEFAULTS.ROAD_FACTOR;
-    return Math.ceil(estimatedRoadDist / hoseLengthM);
+/** Berechnet die Anzahl der benötigten Schläuche. */
+function calcHoseSections(distM, hoseLengthM) {
+    return Math.ceil(distM / hoseLengthM);
 }
 
 function formatDistance(m) {
@@ -430,10 +632,13 @@ function renderHydrantList(hydrants, hoseLength) {
     hydrants.forEach((h, index) => {
         const rank = index + 1;
         const isNearest = index === 0;
-        const sections = calcHoseSections(h.distM, hoseLength);
+        const effectiveDist = h.routeDistM ?? h.distM;
+        const sections = Math.ceil(effectiveDist / hoseLength);
         const label = getHydrantLabel(h.tags);
         const address = getHydrantAddress(h.tags);
-        const hoseLabel = hoseLength + 'm Schläuche';
+        const distLabel = h.routeDistM != null
+            ? `🚗 ${formatDistance(h.routeDistM)}`
+            : `~ ${formatDistance(h.distM)}`;
 
         const li = document.createElement('li');
         li.className = `hydrant-item${isNearest ? ' nearest' : ''}`;
@@ -441,16 +646,20 @@ function renderHydrantList(hydrants, hoseLength) {
         li.setAttribute('role', 'button');
         li.setAttribute('tabindex', '0');
 
+        const barrierBadges = h.barrierTypes?.size > 0
+            ? [...h.barrierTypes].map(t => `<span class="barrier-badge">${t === 'water' ? '🌊' : '🚂'}</span>`).join('')
+            : '';
+
         li.innerHTML = `
       <div class="hydrant-rank">${rank}</div>
       <div class="hydrant-info">
-        <div class="hydrant-name">${label}</div>
-        <div class="hydrant-address">${address || formatDistance(h.distM) + ' entfernt'}</div>
+        <div class="hydrant-name">${label}${barrierBadges}</div>
+        <div class="hydrant-address">${address || distLabel + ' entfernt'}</div>
       </div>
       <div class="hydrant-hose">
         <span class="hose-count">${sections}</span>
         <span class="hose-label">Schläuche</span>
-        <span class="hose-dist">${formatDistance(h.distM)}</span>
+        <span class="hose-dist">${distLabel}</span>
       </div>
     `;
 
@@ -477,19 +686,28 @@ function showEmptyState(message) {
 function renderHydrantMarkers(hydrants, sourcePos, hoseLength) {
     hydrants.forEach((h, index) => {
         const isNearest = index === 0;
-        const sections = calcHoseSections(h.distM, hoseLength);
         const label = getHydrantLabel(h.tags);
         const address = getHydrantAddress(h.tags);
+
+        const barrierWarning = h.barrierTypes?.size > 0
+            ? `<span style="color:#f4a261">⚠ Kreuzung: ${[...h.barrierTypes].map(t => t === 'water' ? '🌊 Gewässer' : '🚂 Bahn').join(', ')}</span><br/>`
+            : '';
+        const effectiveDist = h.routeDistM ?? h.distM;
+        const sections = calcHoseSections(effectiveDist, hoseLength);
+        const distInfo = h.routeDistM != null
+            ? `🚗 Fahrstrecke: <b>${formatDistance(h.routeDistM)}</b>`
+            : `📏 Luftlinie: <b>~ ${formatDistance(h.distM)}</b>`;
 
         const popupContent = `
       <b>${label}</b><br/>
       ${address ? address + '<br/>' : ''}
-      📏 Entfernung: <b>${formatDistance(h.distM)}</b><br/>
-      🧯 Schläuche: <b>${sections}×</b> (à ${hoseLength} m)
+      ${distInfo}<br/>
+      🧯 Schläuche: <b>${sections}×</b> (à ${hoseLength} m)<br/>
+      ${barrierWarning}
     `;
 
         const marker = L.marker([h.lat, h.lng], {
-            icon: createHydrantIcon(index + 1, isNearest),
+            icon: createHydrantIcon(index + 1, isNearest, h.barrierTypes),
             zIndexOffset: isNearest ? 500 : 0,
         })
             .addTo(state.map)
@@ -503,17 +721,108 @@ function renderHydrantMarkers(hydrants, sourcePos, hoseLength) {
 function clearHydrantMarkers() {
     state.markers.hydrants.forEach((m) => state.map.removeLayer(m));
     state.markers.hydrants = [];
+    clearRoute();
+}
+
+// ─────────────────────────────────────────
+// Alle-Hydranten-Overlay
+// ─────────────────────────────────────────
+
+const ALL_HYDRANT_ICON = L.divIcon({
+    className: '',
+    html: `<div style="
+        width:10px; height:10px;
+        background:rgba(230,57,70,0.5);
+        border:1.5px solid #e63946;
+        border-radius:50%;
+    "></div>`,
+    iconSize: [10, 10],
+    iconAnchor: [5, 5],
+});
+
+function renderAllHydrantMarkers() {
+    clearAllHydrantMarkers();
+    const topIds = new Set(state.markers.hydrants.map((_, i) => {
+        const el = dom.hydrantList.querySelectorAll('.hydrant-item')[i];
+        return el ? el.dataset.id : null;
+    }));
+
+    state.hydrants.forEach(h => {
+        // Skip hydrants already shown as ranked top markers
+        if (state.selectedHydrantId === h.id) return;
+        const marker = L.marker([h.lat, h.lng], {
+            icon: ALL_HYDRANT_ICON,
+            zIndexOffset: -100,
+        }).addTo(state.map);
+        marker.on('click', () => selectHydrant(h));
+        state.markers.allHydrants.push(marker);
+    });
+}
+
+function clearAllHydrantMarkers() {
+    state.markers.allHydrants.forEach(m => state.map.removeLayer(m));
+    state.markers.allHydrants = [];
+}
+
+function toggleAllHydrants() {
+    state.showAllHydrants = !state.showAllHydrants;
+    dom.btnToggleAll.classList.toggle('active', state.showAllHydrants);
+    if (state.showAllHydrants) {
+        renderAllHydrantMarkers();
+    } else {
+        clearAllHydrantMarkers();
+    }
+}
+
+// ─────────────────────────────────────────
+// OSRM Routing
+// ─────────────────────────────────────────
+
+const OSRM_BASE = 'https://router.project-osrm.org';
+
+async function fetchRoute(from, to) {
+    try {
+        const url = `${OSRM_BASE}/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=full&geometries=geojson`;
+        const res = await fetch(url);
+        if (!res.ok) return null;
+        const data = await res.json();
+        if (data.code !== 'Ok' || !data.routes?.length) return null;
+        return data.routes[0];
+    } catch (e) {
+        console.error('OSRM routing failed', e);
+        return null;
+    }
+}
+
+function drawRoute(route) {
+    clearRoute();
+    // OSRM GeoJSON coordinates are [lng, lat] → Leaflet needs [lat, lng]
+    const latLngs = route.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+    state.markers.route = L.polyline(latLngs, {
+        color: '#60a5fa',
+        weight: 5,
+        opacity: 0.85,
+        lineJoin: 'round',
+        lineCap: 'round',
+    }).addTo(state.map);
+
+    // Karte so zoomen dass Route + Quelle sichtbar sind
+    state.map.fitBounds(state.markers.route.getBounds(), { padding: [60, 60], maxZoom: 17 });
+}
+
+function clearRoute() {
+    if (state.markers.route) {
+        state.map.removeLayer(state.markers.route);
+        state.markers.route = null;
+    }
 }
 
 // ─────────────────────────────────────────
 // Hydrant auswählen (Fokus auf Karte + Liste)
 // ─────────────────────────────────────────
 
-function selectHydrant(hydrant) {
+async function selectHydrant(hydrant) {
     state.selectedHydrantId = hydrant.id;
-
-    // Karte zu Hydrant fliegen
-    state.map.flyTo([hydrant.lat, hydrant.lng], 17, { duration: 0.8 });
 
     // Marker-Popup öffnen
     const markerIndex = state.hydrants.indexOf(hydrant);
@@ -525,6 +834,38 @@ function selectHydrant(hydrant) {
     document.querySelectorAll('.hydrant-item').forEach((el) => {
         el.classList.toggle('selected', el.dataset.id === String(hydrant.id));
     });
+
+    // Route berechnen und auf Karte zeichnen
+    const pos = getSourcePosition();
+    if (!pos) return;
+
+    const route = await fetchRoute(pos, { lat: hydrant.lat, lng: hydrant.lng });
+    if (!route) {
+        state.map.flyTo([hydrant.lat, hydrant.lng], 17, { duration: 0.8 });
+        return;
+    }
+
+    drawRoute(route);
+
+    // Popup mit echter Fahrstrecke aktualisieren
+    if (markerIndex >= 0 && markerIndex < state.markers.hydrants.length) {
+        const hoseLength = parseFloat(dom.hoseLength.value) || DEFAULTS.HOSE_LENGTH_M;
+        const label = getHydrantLabel(hydrant.tags);
+        const address = getHydrantAddress(hydrant.tags);
+        const sections = calcHoseSections(route.distance, hoseLength);
+        const barrierWarning = hydrant.barrierTypes?.size > 0
+            ? `<span style="color:#f4a261">⚠ Kreuzung: ${[...hydrant.barrierTypes].map(t => t === 'water' ? '🌊 Gewässer' : '🚂 Bahn').join(', ')}</span><br/>`
+            : '';
+        const updatedPopup = `
+      <b>${label}</b><br/>
+      ${address ? address + '<br/>' : ''}
+      📏 Luftlinie: <b>${formatDistance(hydrant.distM)}</b><br/>
+      🚗 Fahrtstrecke: <b>${formatDistance(route.distance)}</b><br/>
+      🧯 Schläuche: <b>${sections}×</b> (à ${hoseLength} m)<br/>
+      ${barrierWarning}
+    `;
+        state.markers.hydrants[markerIndex].getPopup().setContent(updatedPopup).update();
+    }
 }
 
 // ─────────────────────────────────────────
@@ -630,6 +971,7 @@ function initEventListeners() {
     dom.btnCancelFire.addEventListener('click', exitFireMode);
 
     // Hydranten neu laden
+    dom.btnToggleAll.addEventListener('click', toggleAllHydrants);
     dom.btnRefresh.addEventListener('click', fetchHydrants);
 
     // Einstellungen geändert → neu berechnen

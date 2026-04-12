@@ -476,6 +476,13 @@ body {
   text-overflow: ellipsis;
 }
 
+.barrier-badge {
+  display: inline-block;
+  margin-left: 5px;
+  font-size: 11px;
+  vertical-align: middle;
+}
+
 .hydrant-address {
   font-size: 12px;
   color: var(--text-secondary);
