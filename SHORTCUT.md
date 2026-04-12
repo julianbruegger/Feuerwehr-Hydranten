@@ -1,6 +1,9 @@
 # Apple Shortcut – Hydrant Hose Calculator
 
 Quickly get the number of hose sections needed to reach the nearest fire hydrant from your current location.
+There is a Demo Shortcut already created. 
+
+[Apple Shortcut](https://www.icloud.com/shortcuts/5c7dc85fec134bc4a9c61bb260e1c4a8)
 
 ---
 
@@ -9,7 +12,7 @@ Quickly get the number of hose sections needed to reach the nearest fire hydrant
 Upload the `api/` folder to your Hostpoint webspace. The API will be available at:
 
 ```
-https://yourdomain.com/api/hoses?lat=47.04&lng=8.30
+https://feuerwehr.julian-bruegger.ch/api/hoses?lat=47.04&lng=8.30
 ```
 
 No server management required — PHP runs serverlessly on Hostpoint's infrastructure.
@@ -19,7 +22,7 @@ No server management required — PHP runs serverlessly on Hostpoint's infrastru
 ## API Reference
 
 ```
-GET https://yourdomain.com/api/hoses
+GET https://feuerwehr.julian-bruegger.ch/api/hoses
 ```
 
 | Parameter | Required | Default | Description |
@@ -31,7 +34,7 @@ GET https://yourdomain.com/api/hoses
 
 ### Example request
 ```
-https://yourdomain.com/api/hoses?lat=47.0409&lng=8.3005&hose_length=20
+https://feuerwehr.julian-bruegger.ch/api/hoses?lat=47.0409&lng=8.3005&hose_length=20
 ```
 
 ### Example response
@@ -68,9 +71,9 @@ Add action: **Get Current Location**
 Add action: **Text**
 - Content:
   ```
-  https://yourdomain.com/api/hoses?lat=[Latitude]&lng=[Longitude]&hose_length=20
+  https://feuerwehr.julian-bruegger.ch/api/hoses?lat=[Latitude]&lng=[Longitude]&hose_length=20
   ```
-- Replace `yourdomain.com` with your actual Hostpoint domain.
+- Replace `feuerwehr.julian-bruegger.ch` with your actual Hostpoint domain.
 - Tap `[Latitude]` and `[Longitude]` → insert **Current Location → Latitude / Longitude** variables from step 2.
 
 ### 4. Fetch the API
