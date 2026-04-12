@@ -1,0 +1,2 @@
+RewriteEngine On
+RewriteRule ^hoses$ hoses.php [L,QSA]

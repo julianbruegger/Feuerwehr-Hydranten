@@ -23,8 +23,44 @@ const DEFAULTS = {
     MAX_OSRM_CANDIDATES: 50,    // Maximale Hydranten-Kandidaten für OSRM-Routing
 };
 
-/** Overpass API Endpunkt */
-const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+/** Overpass API Endpunkte (Hauptserver + Mirrors für Fallback) */
+const OVERPASS_ENDPOINTS = [
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter',
+    'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+];
+let _overpassIndex = 0;
+
+async function overpassFetch(query, { retries = 2 } = {}) {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+        const url = OVERPASS_ENDPOINTS[_overpassIndex % OVERPASS_ENDPOINTS.length];
+        try {
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'data=' + encodeURIComponent(query),
+            });
+            if (res.status === 429 || res.status === 504 || res.status === 502) {
+                // Zum nächsten Mirror wechseln
+                _overpassIndex++;
+                if (attempt < retries) {
+                    await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
+                    continue;
+                }
+                throw new Error(`HTTP ${res.status}`);
+            }
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return await res.json();
+        } catch (e) {
+            if (attempt < retries) {
+                _overpassIndex++;
+                await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
+            } else {
+                throw e;
+            }
+        }
+    }
+}
 
 // ─────────────────────────────────────────
 // Hydrant-Cache (localStorage, 24h TTL)
@@ -379,15 +415,7 @@ async function fetchHydrants() {
       `;
 
         try {
-            const response = await fetch(OVERPASS_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: 'data=' + encodeURIComponent(hydrantQuery),
-            });
-
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-            const data = await response.json();
+            const data = await overpassFetch(hydrantQuery);
             setCachedHydrants(pos, radius, data.elements || []);
             processHydrantData(data.elements || []);
             setStatus(state.firePos ? 'Brandposition gesetzt' : 'Bereit', state.firePos ? 'fire' : 'ready');
@@ -417,13 +445,7 @@ async function fetchBarriers(pos, radius) {
   `;
 
     try {
-        const response = await fetch(OVERPASS_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: 'data=' + encodeURIComponent(barrierQuery),
-        });
-        if (!response.ok) return;
-        const data = await response.json();
+        const data = await overpassFetch(barrierQuery);
         processBarrierData(data.elements || []);
         sortAndRenderHydrants(); // Neu rendern mit Barriere-Infos
     } catch (e) {
