@@ -575,18 +575,21 @@
         function substationLabel(tags) {
             const p = tags.power || '';
             const s = tags.substation || '';
+            const c = tags.street_cabinet || '';
             if (p === 'substation') {
                 if (s === 'transmission') return 'Übertragungsstation';
                 if (s === 'distribution' || s === 'minor_distribution') return 'Trafostation';
                 return 'Umspannwerk';
             }
             if (p === 'transformer') return 'Transformator';
-            if (p === 'cable_distribution_cabinet') return 'Verteilerkasten';
+            if (p === 'cable_distribution_cabinet') return 'Verteilerkasten (VK)';
+            if (p === 'switch' || p === 'switchgear') return 'Schalter/Trennstelle';
+            if (c === 'power' || c === 'electrical' || c === 'energy') return 'Verteilerkasten (VK)';
             return 'Stromanlage';
         }
 
         function substationDisplayName(tags) {
-            return tags.name || tags.ref || tags.operator || '';
+            return tags.name || tags.ref || tags['ref:vk'] || tags.operator || '';
         }
 
         function esc(str) {
@@ -632,12 +635,14 @@
             $stationsList.innerHTML = `<div class="empty"><div class="empty-icon">⏳</div><p>Lade Trafostationen…</p></div>`;
 
             try {
-                // Overpass-Abfrage (ways mit center-Koordinaten)
+                // Overpass-Abfrage – alle relevanten Strominfrastruktur-Typen,
+                // inkl. man_made=street_cabinet für Verteilerkästen lokaler Netzbetreiber
                 const query = `
-[out:json][timeout:25];
+[out:json][timeout:30];
 (
-  node["power"~"^(substation|transformer|cable_distribution_cabinet)$"](around:${radius},${lat},${lng});
-  way["power"~"^(substation|transformer)$"](around:${radius},${lat},${lng});
+  node["power"~"^(substation|transformer|cable_distribution_cabinet|switch|switchgear)$"](around:${radius},${lat},${lng});
+  way["power"~"^(substation|transformer|cable_distribution_cabinet)$"](around:${radius},${lat},${lng});
+  node["man_made"="street_cabinet"]["street_cabinet"~"^(power|electrical|energy)$"](around:${radius},${lat},${lng});
 );
 out center;`;
 
