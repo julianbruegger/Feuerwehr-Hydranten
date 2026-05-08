@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>⚡ Stromversorgung – Admin</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap"
+        rel="stylesheet" />
+    <style>
+        :root {
+            --bg: #0f0f14;
+            --surface: #18181f;
+            --card: #22222d;
+            --hover: #2a2a38;
+            --red: #e63946;
+            --amber: #f59e0b;
+            --amber-dim: rgba(245, 158, 11, .12);
+            --amber-border: rgba(245, 158, 11, .3);
+            --blue: #38bdf8;
+            --green: #4ade80;
+            --text: #f1f1f5;
+            --muted: #8a8a9a;
+            --border: rgba(255, 255, 255, .07);
+            --radius: 14px;
+        }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
+
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100dvh;
+            -webkit-font-smoothing: antialiased
+        }
+
+        /* ─ Topbar ─ */
+        .topbar {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 0 16px;
+            height: 58px;
+            background: rgba(15, 15, 20, .95);
+            backdrop-filter: blur(16px);
+            border-bottom: 1px solid var(--border)
+        }
+
+        .topbar__left { display: flex; align-items: center; gap: 10px }
+        .topbar__title { font-size: 15px; font-weight: 700 }
+
+        .topbar__back {
+            padding: 7px 14px;
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            color: var(--muted);
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            transition: color .2s, border-color .2s
+        }
+        .topbar__back:hover { color: var(--text); border-color: rgba(255,255,255,.2) }
+
+        /* ─ Layout ─ */
+        .container { max-width: 720px; margin: 0 auto; padding: 24px 16px 80px }
+
+        /* ─ Search section ─ */
+        .search-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px;
+            margin-bottom: 20px
+        }
+
+        .search-card h2 { font-size: 14px; font-weight: 700; margin-bottom: 12px; color: var(--amber) }
+
+        .search-row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: flex-end
+        }
+
+        .search-field { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 140px }
+        .search-field label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px }
+
+        .form-input {
+            width: 100%;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            color: var(--text);
+            font-family: inherit;
+            font-size: 15px;
+            padding: 10px 13px;
+            outline: none;
+            transition: border-color .2s
+        }
+        .form-input:focus { border-color: var(--amber) }
+
+        .btn-search {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            padding: 10px 18px;
+            background: var(--amber);
+            color: #0f172a;
+            border: none;
+            border-radius: var(--radius);
+            font-family: inherit;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: opacity .2s;
+            height: 42px
+        }
+        .btn-search:hover { opacity: .88 }
+        .btn-search:disabled { opacity: .45; cursor: not-allowed }
+
+        .btn-loc {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            padding: 10px 14px;
+            background: transparent;
+            border: 1px solid var(--amber-border);
+            color: var(--amber);
+            border-radius: var(--radius);
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: background .2s;
+            height: 42px
+        }
+        .btn-loc:hover { background: var(--amber-dim) }
+
+        /* ─ Substation cards ─ */
+        #stationsList { display: flex; flex-direction: column; gap: 10px }
+
+        .station-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            overflow: hidden;
+            animation: fadeIn .2s ease
+        }
+
+        .station-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 16px;
+            cursor: pointer;
+            transition: background .2s
+        }
+        .station-header:hover { background: var(--hover) }
+
+        .station-icon {
+            font-size: 20px;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--amber-dim);
+            border: 1px solid var(--amber-border);
+            border-radius: 10px;
+            flex-shrink: 0;
+            color: var(--amber)
+        }
+
+        .station-meta { flex: 1; min-width: 0 }
+
+        .station-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--amber);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis
+        }
+
+        .station-sub {
+            font-size: 12px;
+            color: var(--muted);
+            margin-top: 2px
+        }
+
+        .station-badge {
+            font-size: 11px;
+            font-weight: 700;
+            padding: 3px 10px;
+            border-radius: 999px;
+            background: var(--amber-dim);
+            border: 1px solid var(--amber-border);
+            color: var(--amber);
+            flex-shrink: 0
+        }
+
+        /* ─ Detail expand ─ */
+        .station-detail { display: none; border-top: 1px solid var(--border) }
+        .station-detail.open { display: block }
+
+        .detail-inner { padding: 14px 16px }
+
+        .assign-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px
+        }
+
+        .assign-title { font-size: 13px; font-weight: 700; color: var(--muted) }
+
+        .btn-add {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 7px 14px;
+            background: var(--amber);
+            color: #0f172a;
+            border: none;
+            border-radius: 10px;
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: opacity .2s
+        }
+        .btn-add:hover { opacity: .88 }
+
+        .assign-list { display: flex; flex-direction: column; gap: 8px }
+
+        .assign-item {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 12px 14px;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px
+        }
+
+        .assign-info { flex: 1; min-width: 0 }
+
+        .assign-name { font-size: 14px; font-weight: 600 }
+
+        .assign-addr {
+            font-size: 12px;
+            color: var(--muted);
+            margin-top: 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis
+        }
+
+        .assign-notes { font-size: 12px; color: var(--muted); margin-top: 4px; font-style: italic }
+
+        .assign-actions { display: flex; gap: 6px; flex-shrink: 0; margin-top: 2px }
+
+        .icon-btn {
+            width: 30px;
+            height: 30px;
+            border-radius: 8px;
+            background: transparent;
+            border: 1px solid var(--border);
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background .15s
+        }
+        .icon-btn:hover { background: var(--hover) }
+        .icon-btn.del:hover { background: rgba(230,57,70,.15); border-color: var(--red) }
+
+        .empty-assign {
+            font-size: 13px;
+            color: var(--muted);
+            text-align: center;
+            padding: 14px 0
+        }
+
+        /* ─ Modal ─ */
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,.7);
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            z-index: 500;
+            padding: 16px
+        }
+        .modal-backdrop.hidden { display: none }
+
+        .modal {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 24px 20px;
+            width: 100%;
+            max-width: 480px;
+            max-height: 90dvh;
+            overflow-y: auto;
+            animation: slideUp .25s ease
+        }
+
+        .modal-title { font-size: 17px; font-weight: 700; margin-bottom: 18px; color: var(--amber) }
+
+        .form-field { margin-bottom: 14px }
+
+        .form-label {
+            display: block;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .5px;
+            color: var(--muted);
+            margin-bottom: 6px
+        }
+
+        .form-textarea {
+            width: 100%;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            color: var(--text);
+            font-family: inherit;
+            font-size: 15px;
+            padding: 10px 13px;
+            outline: none;
+            resize: vertical;
+            height: 90px;
+            transition: border-color .2s
+        }
+        .form-textarea:focus { border-color: var(--amber) }
+        .form-input:focus { border-color: var(--amber) }
+
+        .coords-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px }
+        .modal-hint { font-size: 12px; color: var(--muted); margin-top: 4px }
+
+        .modal-actions { display: flex; gap: 10px; margin-top: 20px }
+
+        .btn-cancel {
+            flex: 1;
+            padding: 13px;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            color: var(--text);
+            font-family: inherit;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background .2s
+        }
+        .btn-cancel:hover { background: var(--hover) }
+
+        .btn-save {
+            flex: 2;
+            padding: 13px;
+            background: var(--amber);
+            border: none;
+            border-radius: var(--radius);
+            color: #0f172a;
+            font-family: inherit;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: opacity .2s
+        }
+        .btn-save:hover { opacity: .88 }
+
+        /* ─ Toolbar ─ */
+        .toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 20px
+        }
+        .toolbar__title { font-size: 18px; font-weight: 700 }
+
+        /* ─ Empty / Loading ─ */
+        .empty {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--muted)
+        }
+        .empty-icon { font-size: 36px; margin-bottom: 10px }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: none } }
+        @keyframes slideUp { from { transform: translateY(30px); opacity: 0 } to { transform: translateY(0); opacity: 1 } }
+    </style>
+</head>
+
+<body>
+
+    <header class="topbar">
+        <div class="topbar__left">
+            <span style="font-size:22px">⚡</span>
+            <span class="topbar__title">Stromversorgung</span>
+        </div>
+        <a href="/admin/" class="topbar__back">← Admin</a>
+    </header>
+
+    <div class="container">
+        <div class="toolbar">
+            <span class="toolbar__title" id="deptLabel">Lade…</span>
+        </div>
+
+        <!-- Suche -->
+        <div class="search-card">
+            <h2>⚡ Trafostationen suchen</h2>
+            <div class="search-row">
+                <div class="search-field">
+                    <label for="fLat">Breitengrad</label>
+                    <input class="form-input" type="number" id="fLat" placeholder="47.0409" step="any" />
+                </div>
+                <div class="search-field">
+                    <label for="fLng">Längengrad</label>
+                    <input class="form-input" type="number" id="fLng" placeholder="8.3005" step="any" />
+                </div>
+                <div class="search-field" style="max-width:110px">
+                    <label for="fRadius">Radius (m)</label>
+                    <input class="form-input" type="number" id="fRadius" value="2000" min="200" max="5000" step="100" />
+                </div>
+                <button class="btn-loc" id="btnLoc" title="Meinen Standort verwenden">📍 GPS</button>
+                <button class="btn-search" id="btnSearch">Suchen</button>
+            </div>
+        </div>
+
+        <div id="stationsList">
+            <div class="empty">
+                <div class="empty-icon">⚡</div>
+                <p>Gib einen Standort ein und klicke auf "Suchen".</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Gebäude hinzufügen / bearbeiten -->
+    <div class="modal-backdrop hidden" id="modalBackdrop">
+        <div class="modal">
+            <div class="modal-title" id="modalTitle">Gebäude zuordnen</div>
+            <input type="hidden" id="editId" />
+            <input type="hidden" id="editOsmType" />
+            <input type="hidden" id="editOsmId" />
+            <input type="hidden" id="editSubName" />
+
+            <div class="form-field">
+                <label class="form-label" for="fBuildingName">Gebäudename / Bezeichnung *</label>
+                <input class="form-input" type="text" id="fBuildingName"
+                    placeholder="z.B. Alte Fabrik, Hochhaus Mitte" />
+            </div>
+            <div class="form-field">
+                <label class="form-label" for="fAddress">Adresse</label>
+                <input class="form-input" type="text" id="fAddress" placeholder="z.B. Hauptstrasse 5, 6000 Luzern" />
+            </div>
+            <div class="form-field">
+                <label class="form-label">Koordinaten (für Kartenpin)</label>
+                <div class="coords-row">
+                    <input class="form-input" type="number" id="fBLat" placeholder="Breitengrad" step="any" />
+                    <input class="form-input" type="number" id="fBLng" placeholder="Längengrad" step="any" />
+                </div>
+                <div class="modal-hint">Tipp: Koordinaten findest du in der Hauptkarte via Rechtsklick / langes Drücken.</div>
+            </div>
+            <div class="form-field">
+                <label class="form-label" for="fNotes">Notizen</label>
+                <textarea class="form-textarea" id="fNotes" placeholder="Besonderheiten, Ansprechpartner, Zugangsinformationen…"></textarea>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-cancel" id="btnCancel">Abbrechen</button>
+                <button class="btn-save" id="btnSave">Speichern</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        'use strict';
+
+        // ── Auth-Check ────────────────────────────────────────────────────────────────
+        const token = localStorage.getItem('hw_token');
+        const expires = parseInt(localStorage.getItem('hw_expires') || '0', 10);
+
+        function clearAuth() {
+            localStorage.removeItem('hw_token');
+            localStorage.removeItem('hw_dept_name');
+            localStorage.removeItem('hw_expires');
+            window.location.href = '/login.php';
+        }
+        if (!token || Date.now() > expires) clearAuth();
+
+        document.getElementById('deptLabel').textContent =
+            (localStorage.getItem('hw_dept_name') || 'Feuerwehr') + ' – Stromversorgung';
+
+        // ── DOM refs ──────────────────────────────────────────────────────────────────
+        const $stationsList  = document.getElementById('stationsList');
+        const $modalBackdrop = document.getElementById('modalBackdrop');
+        const $modalTitle    = document.getElementById('modalTitle');
+        const $editId        = document.getElementById('editId');
+        const $editOsmType   = document.getElementById('editOsmType');
+        const $editOsmId     = document.getElementById('editOsmId');
+        const $editSubName   = document.getElementById('editSubName');
+        const $fBuildingName = document.getElementById('fBuildingName');
+        const $fAddress      = document.getElementById('fAddress');
+        const $fBLat         = document.getElementById('fBLat');
+        const $fBLng         = document.getElementById('fBLng');
+        const $fNotes        = document.getElementById('fNotes');
+
+        // ── Overpass ──────────────────────────────────────────────────────────────────
+        const OVERPASS_ENDPOINTS = [
+            'https://overpass-api.de/api/interpreter',
+            'https://overpass.kumi.systems/api/interpreter',
+            'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+        ];
+        let _ovIdx = 0;
+
+        async function overpassFetch(query) {
+            for (let attempt = 0; attempt <= 2; attempt++) {
+                const url = OVERPASS_ENDPOINTS[_ovIdx % OVERPASS_ENDPOINTS.length];
+                try {
+                    const res = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: 'data=' + encodeURIComponent(query),
+                    });
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    return await res.json();
+                } catch (e) {
+                    _ovIdx++;
+                    if (attempt === 2) throw e;
+                    await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
+                }
+            }
+        }
+
+        // ── API helper ────────────────────────────────────────────────────────────────
+        async function api(action, id, body) {
+            let url = `/admin/substations_api.php?action=${encodeURIComponent(action)}`;
+            if (id) url += `&id=${encodeURIComponent(id)}`;
+            try {
+                const res = await fetch(url, {
+                    method: body ? 'POST' : 'GET',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: body ? JSON.stringify(body) : undefined,
+                });
+                if (res.status === 401) { clearAuth(); return null; }
+                const data = await res.json();
+                if (data.error) { alert('Fehler: ' + data.error); return null; }
+                return data;
+            } catch {
+                alert('Netzwerkfehler – bitte erneut versuchen.');
+                return null;
+            }
+        }
+
+        // ── Substation type helpers ───────────────────────────────────────────────────
+        function substationLabel(tags) {
+            const p = tags.power || '';
+            const s = tags.substation || '';
+            if (p === 'substation') {
+                if (s === 'transmission') return 'Übertragungsstation';
+                if (s === 'distribution' || s === 'minor_distribution') return 'Trafostation';
+                return 'Umspannwerk';
+            }
+            if (p === 'transformer') return 'Transformator';
+            if (p === 'cable_distribution_cabinet') return 'Verteilerkasten';
+            return 'Stromanlage';
+        }
+
+        function substationDisplayName(tags) {
+            return tags.name || tags.ref || tags.operator || '';
+        }
+
+        function esc(str) {
+            return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        // ── State ─────────────────────────────────────────────────────────────────────
+        let foundStations = [];   // { osmType, osmId, tags, lat, lng }
+        let openStationKey = null;
+        let allAssignments = [];  // alle Zuordnungen (from DB)
+
+        // ── Suche ─────────────────────────────────────────────────────────────────────
+        document.getElementById('btnLoc').addEventListener('click', () => {
+            const btn = document.getElementById('btnLoc');
+            btn.disabled = true;
+            navigator.geolocation.getCurrentPosition(
+                pos => {
+                    document.getElementById('fLat').value = pos.coords.latitude.toFixed(6);
+                    document.getElementById('fLng').value = pos.coords.longitude.toFixed(6);
+                    btn.disabled = false;
+                },
+                () => { alert('Standort nicht verfügbar.'); btn.disabled = false; },
+                { enableHighAccuracy: true, timeout: 10000 }
+            );
+        });
+
+        document.getElementById('btnSearch').addEventListener('click', searchStations);
+
+        async function searchStations() {
+            const lat    = parseFloat(document.getElementById('fLat').value);
+            const lng    = parseFloat(document.getElementById('fLng').value);
+            const radius = parseInt(document.getElementById('fRadius').value, 10) || 2000;
+
+            if (isNaN(lat) || isNaN(lng)) {
+                alert('Bitte Koordinaten eingeben oder GPS-Standort verwenden.');
+                return;
+            }
+
+            const btn = document.getElementById('btnSearch');
+            btn.disabled = true;
+            btn.textContent = 'Suche…';
+
+            $stationsList.innerHTML = `<div class="empty"><div class="empty-icon">⏳</div><p>Lade Trafostationen…</p></div>`;
+
+            try {
+                // Overpass-Abfrage (ways mit center-Koordinaten)
+                const query = `
+[out:json][timeout:25];
+(
+  node["power"~"^(substation|transformer|cable_distribution_cabinet)$"](around:${radius},${lat},${lng});
+  way["power"~"^(substation|transformer)$"](around:${radius},${lat},${lng});
+);
+out center;`;
+
+                const data = await overpassFetch(query);
+                const elements = (data.elements || []).filter(el => {
+                    if (el.type === 'node') return el.lat != null;
+                    if (el.type === 'way') return el.center?.lat != null;
+                    return false;
+                });
+
+                // Distanz berechnen & sortieren
+                foundStations = elements.map(el => ({
+                    osmType: el.type,
+                    osmId: el.id,
+                    tags: el.tags || {},
+                    lat: el.type === 'node' ? el.lat : el.center.lat,
+                    lng: el.type === 'node' ? el.lon : el.center.lon,
+                    distM: haversine(lat, lng, el.type === 'node' ? el.lat : el.center.lat, el.type === 'node' ? el.lon : el.center.lon),
+                })).sort((a, b) => a.distM - b.distM);
+
+                // Alle Zuordnungen aus DB laden
+                const assignments = await api('list');
+                allAssignments = Array.isArray(assignments) ? assignments : [];
+
+                renderStations();
+            } catch (err) {
+                $stationsList.innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><p>Fehler: ${esc(err.message)}</p></div>`;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Suchen';
+            }
+        }
+
+        function haversine(lat1, lng1, lat2, lng2) {
+            const R = 6371000;
+            const dL = (lat2 - lat1) * Math.PI / 180;
+            const dG = (lng2 - lng1) * Math.PI / 180;
+            const a = Math.sin(dL/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dG/2)**2;
+            return 2 * R * Math.asin(Math.sqrt(a));
+        }
+
+        function formatDist(m) {
+            return m < 1000 ? `${Math.round(m)} m` : `${(m/1000).toFixed(1)} km`;
+        }
+
+        function renderStations() {
+            if (foundStations.length === 0) {
+                $stationsList.innerHTML = `<div class="empty"><div class="empty-icon">🔍</div><p>Keine Trafostationen im Suchradius gefunden.</p></div>`;
+                return;
+            }
+
+            $stationsList.innerHTML = foundStations.map(s => {
+                const key   = `${s.osmType}/${s.osmId}`;
+                const label = substationLabel(s.tags);
+                const name  = substationDisplayName(s.tags);
+                const count = allAssignments.filter(a =>
+                    a.substation_osm_type === s.osmType && String(a.substation_osm_id) === String(s.osmId)
+                ).length;
+                const voltStr = s.tags.voltage ? ` · ${esc(s.tags.voltage)} V` : '';
+                const opStr   = s.tags.operator ? ` · ${esc(s.tags.operator)}` : '';
+
+                return `
+<div class="station-card" data-key="${esc(key)}">
+  <div class="station-header" data-action="toggle" data-key="${esc(key)}">
+    <div class="station-icon">⚡</div>
+    <div class="station-meta">
+      <div class="station-name">${esc(name || label)} <span style="font-weight:400;font-size:12px;color:var(--muted)">${esc(label)}</span></div>
+      <div class="station-sub">${formatDist(s.distM)}${voltStr}${opStr}</div>
+    </div>
+    <div class="station-badge">${count} Gebäude</div>
+  </div>
+  <div class="station-detail" id="detail-${esc(key.replace('/', '-'))}">
+    <div class="detail-inner">
+      <div class="assign-toolbar">
+        <span class="assign-title">Zugeordnete Gebäude</span>
+        <button class="btn-add" data-action="add" data-key="${esc(key)}"
+          data-osm-type="${esc(s.osmType)}" data-osm-id="${s.osmId}"
+          data-sub-name="${esc(name || label)}">＋ Gebäude</button>
+      </div>
+      <div class="assign-list" id="assigns-${esc(key.replace('/', '-'))}">
+        <p class="empty-assign">Lade…</p>
+      </div>
+    </div>
+  </div>
+</div>`;
+            }).join('');
+        }
+
+        // ── Klick-Delegation ──────────────────────────────────────────────────────────
+        $stationsList.addEventListener('click', async (e) => {
+            const target = e.target.closest('[data-action]');
+            if (!target) return;
+
+            const action = target.dataset.action;
+
+            if (action === 'toggle') {
+                const key    = target.dataset.key;
+                const safeKey = key.replace('/', '-');
+                const detail = document.getElementById(`detail-${safeKey}`);
+                if (!detail) return;
+                const isOpen = detail.classList.toggle('open');
+                if (isOpen) await loadAssignsForStation(key, safeKey);
+                return;
+            }
+
+            if (action === 'add') {
+                openModal(null, target.dataset.osmType, target.dataset.osmId, target.dataset.subName);
+                return;
+            }
+
+            if (action === 'edit') {
+                const id = parseInt(target.dataset.id, 10);
+                const a  = allAssignments.find(x => x.id === id);
+                if (a) openModal(a, a.substation_osm_type, String(a.substation_osm_id), a.substation_name || '');
+                return;
+            }
+
+            if (action === 'delete') {
+                if (!confirm('Zuordnung löschen?')) return;
+                const id = parseInt(target.dataset.id, 10);
+                await api('delete', id);
+                const assignment = allAssignments.find(x => x.id === id);
+                allAssignments = allAssignments.filter(x => x.id !== id);
+                if (assignment) {
+                    const safeKey = `${assignment.substation_osm_type}-${assignment.substation_osm_id}`;
+                    await loadAssignsForStation(
+                        `${assignment.substation_osm_type}/${assignment.substation_osm_id}`,
+                        safeKey
+                    );
+                    updateBadge(assignment.substation_osm_type, String(assignment.substation_osm_id));
+                }
+            }
+        });
+
+        async function loadAssignsForStation(key, safeKey) {
+            const [osmType, osmId] = key.split('/');
+            const container = document.getElementById(`assigns-${safeKey}`);
+            if (!container) return;
+            container.innerHTML = '<p class="empty-assign">Lade…</p>';
+
+            const data = await api(`list&osm_type=${encodeURIComponent(osmType)}&osm_id=${encodeURIComponent(osmId)}`);
+            const assigns = Array.isArray(data) ? data : [];
+
+            // Lokalen Cache aktualisieren
+            allAssignments = allAssignments
+                .filter(a => !(a.substation_osm_type === osmType && String(a.substation_osm_id) === osmId))
+                .concat(assigns);
+
+            if (assigns.length === 0) {
+                container.innerHTML = '<p class="empty-assign">Noch keine Gebäude zugeordnet.</p>';
+                return;
+            }
+
+            container.innerHTML = assigns.map(a => `
+<div class="assign-item" data-id="${a.id}">
+  <div class="assign-info">
+    <div class="assign-name">🏠 ${esc(a.building_name)}</div>
+    ${a.building_address ? `<div class="assign-addr">${esc(a.building_address)}</div>` : ''}
+    ${a.notes ? `<div class="assign-notes">${esc(a.notes)}</div>` : ''}
+    ${a.building_lat ? `<div class="assign-addr" style="color:#38bdf8">📍 ${a.building_lat}, ${a.building_lng}</div>` : ''}
+  </div>
+  <div class="assign-actions">
+    <button class="icon-btn" data-action="edit" data-id="${a.id}" title="Bearbeiten">✏️</button>
+    <button class="icon-btn del" data-action="delete" data-id="${a.id}" title="Löschen">🗑️</button>
+  </div>
+</div>`).join('');
+
+            updateBadge(osmType, osmId);
+        }
+
+        function updateBadge(osmType, osmId) {
+            const count = allAssignments.filter(a =>
+                a.substation_osm_type === osmType && String(a.substation_osm_id) === osmId
+            ).length;
+            const card = $stationsList.querySelector(`[data-key="${osmType}/${osmId}"]`);
+            if (card) {
+                const badge = card.querySelector('.station-badge');
+                if (badge) badge.textContent = `${count} Gebäude`;
+            }
+        }
+
+        // ── Modal ─────────────────────────────────────────────────────────────────────
+        function openModal(assignment, osmType, osmId, subName) {
+            $editId.value       = assignment ? assignment.id : '';
+            $editOsmType.value  = osmType;
+            $editOsmId.value    = osmId;
+            $editSubName.value  = subName;
+            $modalTitle.textContent = assignment ? 'Gebäude bearbeiten' : 'Gebäude zuordnen';
+
+            $fBuildingName.value = assignment?.building_name || '';
+            $fAddress.value      = assignment?.building_address || '';
+            $fBLat.value         = assignment?.building_lat || '';
+            $fBLng.value         = assignment?.building_lng || '';
+            $fNotes.value        = assignment?.notes || '';
+
+            $modalBackdrop.classList.remove('hidden');
+            $fBuildingName.focus();
+        }
+
+        function closeModal() {
+            $modalBackdrop.classList.add('hidden');
+        }
+
+        document.getElementById('btnCancel').addEventListener('click', closeModal);
+        $modalBackdrop.addEventListener('click', e => { if (e.target === $modalBackdrop) closeModal(); });
+
+        document.getElementById('btnSave').addEventListener('click', async () => {
+            const name = $fBuildingName.value.trim();
+            if (!name) { alert('Gebäudename ist Pflichtfeld.'); return; }
+
+            const body = {
+                substation_osm_type: $editOsmType.value,
+                substation_osm_id:   parseInt($editOsmId.value, 10),
+                substation_name:     $editSubName.value,
+                building_name:       name,
+                building_address:    $fAddress.value.trim() || null,
+                building_lat:        $fBLat.value !== '' ? parseFloat($fBLat.value) : null,
+                building_lng:        $fBLng.value !== '' ? parseFloat($fBLng.value) : null,
+                notes:               $fNotes.value.trim() || null,
+            };
+
+            const editId = $editId.value;
+            const result = editId
+                ? await api('update', parseInt(editId, 10), body)
+                : await api('create', null, body);
+
+            if (!result) return;
+            closeModal();
+
+            const osmType  = $editOsmType.value;
+            const osmId    = $editOsmId.value;
+            const safeKey  = `${osmType}-${osmId}`;
+            await loadAssignsForStation(`${osmType}/${osmId}`, safeKey);
+        });
+    </script>
+
+</body>
+</html>

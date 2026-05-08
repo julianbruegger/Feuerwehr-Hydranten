@@ -338,6 +338,14 @@
             border-color: #38bdf8;
         }
 
+        .nav-card--strom {
+            border-color: rgba(245, 158, 11, 0.3);
+        }
+
+        .nav-card--strom:hover {
+            border-color: #f59e0b;
+        }
+
         .nav-card__icon {
             font-size: 24px;
             width: 44px;
@@ -552,13 +560,21 @@
             </button>
         </div>
 
-        <!-- WasserTransportPlan Nav -->
+        <!-- Submodule Nav -->
         <div class="nav-cards">
             <a href="/admin/wtp.html" class="nav-card nav-card--water">
                 <div class="nav-card__icon">💧</div>
                 <div class="nav-card__meta">
                     <div class="nav-card__title">WasserTransportPläne</div>
                     <div class="nav-card__sub">Pläne verwalten, Notizen &amp; Dateien hochladen</div>
+                </div>
+                <span class="nav-card__arrow">›</span>
+            </a>
+            <a href="/admin/stromversorgung.html" class="nav-card nav-card--strom">
+                <div class="nav-card__icon">⚡</div>
+                <div class="nav-card__meta">
+                    <div class="nav-card__title">Stromversorgung</div>
+                    <div class="nav-card__sub">Gebäude Trafostationen zuordnen</div>
                 </div>
                 <span class="nav-card__arrow">›</span>
             </a>
