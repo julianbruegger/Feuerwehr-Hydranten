@@ -147,8 +147,9 @@ function esc(str) {
 // ─────────────────────────────────────────
 
 function substationMeta(tags) {
-    const power = tags.power || '';
-    const sub   = tags.substation || '';
+    const power   = tags.power || '';
+    const sub     = tags.substation || '';
+    const cabinet = tags.street_cabinet || '';
 
     if (power === 'substation') {
         if (sub === 'transmission')
@@ -160,12 +161,18 @@ function substationMeta(tags) {
     if (power === 'transformer')
         return { label: 'Transformator', color: '#fb923c', glow: 'rgba(251,146,60,0.35)', icon: 'T' };
     if (power === 'cable_distribution_cabinet')
-        return { label: 'Verteilerkasten', color: '#94a3b8', glow: 'rgba(148,163,184,0.25)', icon: '▣' };
+        return { label: 'Verteilerkasten (VK)', color: '#94a3b8', glow: 'rgba(148,163,184,0.25)', icon: 'VK' };
+    if (power === 'switch' || power === 'switchgear')
+        return { label: 'Schalter/Trennstelle', color: '#818cf8', glow: 'rgba(129,140,248,0.25)', icon: '⇄' };
+    // man_made=street_cabinet with street_cabinet=power/electrical
+    if (cabinet === 'power' || cabinet === 'electrical' || cabinet === 'energy')
+        return { label: 'Verteilerkasten (VK)', color: '#94a3b8', glow: 'rgba(148,163,184,0.25)', icon: 'VK' };
     return { label: 'Stromanlage', color: '#f59e0b', glow: 'rgba(245,158,11,0.35)', icon: '⚡' };
 }
 
 function substationDisplayName(tags) {
-    return tags.name || tags.ref || tags.operator || '';
+    // VKs often have their designation in the name (e.g. "VK Industriestrasse 1") or ref
+    return tags.name || tags.ref || tags['ref:vk'] || tags.operator || '';
 }
 
 // ─────────────────────────────────────────
@@ -342,12 +349,16 @@ async function fetchSubstations() {
 
     setStatus('Trafostationen laden…', 'loading');
 
-    // ways mit "out center" damit Mittelpunkt-Koordinaten zurückgegeben werden
+    // ways mit "out center" damit Mittelpunkt-Koordinaten zurückgegeben werden.
+    // Neben den Standard-power=*-Tags auch man_made=street_cabinet für Verteilerkästen,
+    // die von lokalen Netzbetreibern (z.B. Steiner Energie Malters) möglicherweise
+    // anders eingetragen wurden.
     const query = `
-[out:json][timeout:25];
+[out:json][timeout:30];
 (
-  node["power"~"^(substation|transformer|cable_distribution_cabinet)$"](around:${radius},${pos.lat},${pos.lng});
-  way["power"~"^(substation|transformer)$"](around:${radius},${pos.lat},${pos.lng});
+  node["power"~"^(substation|transformer|cable_distribution_cabinet|switch|switchgear)$"](around:${radius},${pos.lat},${pos.lng});
+  way["power"~"^(substation|transformer|cable_distribution_cabinet)$"](around:${radius},${pos.lat},${pos.lng});
+  node["man_made"="street_cabinet"]["street_cabinet"~"^(power|electrical|energy)$"](around:${radius},${pos.lat},${pos.lng});
 );
 out center;
 `;
