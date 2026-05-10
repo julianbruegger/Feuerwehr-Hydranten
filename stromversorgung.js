@@ -89,6 +89,7 @@ function setCache(pos, radius, elements) {
 const state = {
     map: null,
     userPos: null,
+    hasTruePosition: false,
     substations: [],
     markers: {
         user: null,
@@ -99,7 +100,7 @@ const state = {
     },
     showAllSubstations: false,
     watchId: null,
-    assignments: [],   // Gebäude-Zuordnungen vom Admin (wenn eingeloggt)
+    assignments: [],
 };
 
 // ─────────────────────────────────────────
@@ -107,17 +108,20 @@ const state = {
 // ─────────────────────────────────────────
 
 const dom = {
-    statusBadge:   document.getElementById('statusBadge'),
-    statusText:    document.getElementById('statusText'),
-    btnMyLocation: document.getElementById('btnMyLocation'),
-    btnToggleAll:  document.getElementById('btnToggleAll'),
-    btnBasemap:    document.getElementById('btnBasemap'),
-    btnRefresh:    document.getElementById('btnRefresh'),
-    sheetHandle:   document.getElementById('sheetHandle'),
-    bottomSheet:   document.getElementById('bottomSheet'),
-    searchRadius:  document.getElementById('searchRadius'),
-    substationList: document.getElementById('substationList'),
-    emptyState:    document.getElementById('emptyState'),
+    statusBadge:       document.getElementById('statusBadge'),
+    statusText:        document.getElementById('statusText'),
+    btnMyLocation:     document.getElementById('btnMyLocation'),
+    btnToggleAll:      document.getElementById('btnToggleAll'),
+    btnBasemap:        document.getElementById('btnBasemap'),
+    btnRefresh:        document.getElementById('btnRefresh'),
+    locationAlert:     document.getElementById('locationAlert'),
+    locationAlertText: document.getElementById('locationAlertText'),
+    btnLocationRetry:  document.getElementById('btnLocationRetry'),
+    sheetHandle:       document.getElementById('sheetHandle'),
+    bottomSheet:       document.getElementById('bottomSheet'),
+    searchRadius:      document.getElementById('searchRadius'),
+    substationList:    document.getElementById('substationList'),
+    emptyState:        document.getElementById('emptyState'),
 };
 
 // ─────────────────────────────────────────
@@ -303,8 +307,10 @@ function startLocationWatch() {
 function onPositionUpdate(position) {
     const { latitude, longitude, accuracy } = position.coords;
     const newPos = { lat: latitude, lng: longitude };
-    const isFirst = state.userPos === null;
+    const isFirst = !state.hasTruePosition;
     state.userPos = newPos;
+    state.hasTruePosition = true;
+    hideLocationAlert();
 
     updateUserMarker(newPos, accuracy);
 
@@ -318,12 +324,40 @@ function onPositionUpdate(position) {
 function onPositionError(error) {
     const msgs = { 1: 'Standortzugriff verweigert', 2: 'Standort nicht verfügbar', 3: 'GPS-Zeitüberschreitung' };
     setStatus(msgs[error.code] || 'GPS-Fehler', 'error');
+    showLocationAlert(error.code);
 
     if (!state.userPos) {
         const center = state.map.getCenter();
         state.userPos = { lat: center.lat, lng: center.lng };
         fetchSubstations();
     }
+}
+
+// ─────────────────────────────────────────
+// Standort-Alert
+// ─────────────────────────────────────────
+
+function showLocationAlert(errorCode) {
+    dom.btnMyLocation.classList.add('fab--needs-location');
+    dom.locationAlertText.textContent = errorCode === 1
+        ? '📍 Standortzugriff verweigert – bitte in den Browser-Einstellungen aktivieren'
+        : '📍 Standort konnte nicht ermittelt werden';
+    dom.locationAlert.hidden = false;
+}
+
+function hideLocationAlert() {
+    dom.locationAlert.hidden = true;
+    dom.btnMyLocation.classList.remove('fab--needs-location');
+}
+
+function retryLocation() {
+    hideLocationAlert();
+    setStatus('Standort ermitteln…', 'loading');
+    navigator.geolocation.getCurrentPosition(onPositionUpdate, onPositionError, {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0,
+    });
 }
 
 function updateUserMarker(pos, accuracy) {
@@ -685,12 +719,14 @@ function initSheetDrag() {
 
 function initEventListeners() {
     dom.btnMyLocation.addEventListener('click', () => {
-        if (state.userPos) {
+        if (state.hasTruePosition && state.userPos) {
             state.map.flyTo([state.userPos.lat, state.userPos.lng], 16, { duration: 0.8 });
         } else {
-            startLocationWatch();
+            retryLocation();
         }
     });
+
+    dom.btnLocationRetry.addEventListener('click', retryLocation);
 
     dom.btnToggleAll.addEventListener('click', toggleAllSubstations);
     dom.btnBasemap.addEventListener('click', toggleBasemap);

@@ -107,6 +107,7 @@ const state = {
     map: null,         // Leaflet Map Instanz
     userPos: null,         // { lat, lng } – GPS-Standort
     firePos: null,         // { lat, lng } – Manuell gesetzte Brandposition (oder null)
+    hasTruePosition: false, // true sobald echter GPS-Fix vorliegt (nicht nur Fallback)
     hydrants: [],           // Array von Hydrant-Objekten (mit Distanz)
     barrierSegments: [],   // Liniensegmente von Gewässern & Bahnlinien
     passwaySegments: [],   // Liniensegmente von Brücken & Tunneln
@@ -139,6 +140,9 @@ const dom = {
     btnRefresh: document.getElementById('btnRefresh'),
     modeBanner: document.getElementById('modeBanner'),
     btnCancelFire: document.getElementById('btnCancelFire'),
+    locationAlert: document.getElementById('locationAlert'),
+    locationAlertText: document.getElementById('locationAlertText'),
+    btnLocationRetry: document.getElementById('btnLocationRetry'),
     sheetHandle: document.getElementById('sheetHandle'),
     bottomSheet: document.getElementById('bottomSheet'),
     hoseLength: document.getElementById('hoseLength'),
@@ -285,15 +289,16 @@ function startLocationWatch() {
 function onPositionUpdate(position) {
     const { latitude, longitude, accuracy } = position.coords;
     const newPos = { lat: latitude, lng: longitude };
-    const isFirstFix = state.userPos === null;
+    // Erster echter Fix oder Übergang vom Fallback zur echten Position
+    const isFirstFix = !state.hasTruePosition;
 
     state.userPos = newPos;
+    state.hasTruePosition = true;
+    hideLocationAlert();
 
-    // Marker/Kreis aktualisieren
     updateUserMarker(newPos, accuracy);
 
     if (isFirstFix) {
-        // Erste Position → Karte zentrieren & Hydranten laden
         state.map.setView([newPos.lat, newPos.lng], 16);
         fetchHydrants();
     }
@@ -308,13 +313,50 @@ function onPositionError(error) {
         3: 'GPS-Zeitüberschreitung',
     };
     setStatus(messages[error.code] || 'GPS-Fehler', 'error');
+    showLocationAlert(error.code);
 
-    // Fallback: Hydranten an der aktuellen Kartenansicht laden
+    // Fallback: Hydranten an der aktuellen Kartenansicht laden,
+    // damit die App ohne Standort nutzbar bleibt
     if (!state.userPos && !state.firePos) {
         const center = state.map.getCenter();
         state.userPos = { lat: center.lat, lng: center.lng };
         fetchHydrants();
     }
+}
+
+// ─────────────────────────────────────────
+// Standort-Alert
+// ─────────────────────────────────────────
+
+function showLocationAlert(errorCode) {
+    dom.btnMyLocation.classList.add('fab--needs-location');
+
+    if (errorCode === 1) {
+        // Zugriff verweigert – Nutzer muss in Browser-Einstellungen manuell freigeben
+        dom.locationAlertText.textContent = '📍 Standortzugriff verweigert – bitte in den Browser-Einstellungen aktivieren';
+        dom.btnLocationRetry.textContent = 'Erneut versuchen';
+    } else {
+        dom.locationAlertText.textContent = '📍 Standort konnte nicht ermittelt werden';
+        dom.btnLocationRetry.textContent = 'Erneut versuchen';
+    }
+    dom.locationAlert.hidden = false;
+}
+
+function hideLocationAlert() {
+    dom.locationAlert.hidden = true;
+    dom.btnMyLocation.classList.remove('fab--needs-location');
+}
+
+function retryLocation() {
+    hideLocationAlert();
+    setStatus('Standort ermitteln…', 'loading');
+    // maximumAge: 0 erzwingt einen frischen Fix (kein Cache) und löst
+    // auf Android erneut den Berechtigungs-Dialog aus, falls er auf "einmalig" stand
+    navigator.geolocation.getCurrentPosition(onPositionUpdate, onPositionError, {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0,
+    });
 }
 
 function updateUserMarker(pos, accuracy) {
@@ -1005,14 +1047,16 @@ function initSheetDrag() {
 // ─────────────────────────────────────────
 
 function initEventListeners() {
-    // "Mein Standort" zentrieren
+    // "Mein Standort" – zentrieren wenn GPS vorliegt, sonst neuen Fix anfordern
     dom.btnMyLocation.addEventListener('click', () => {
-        if (state.userPos) {
+        if (state.hasTruePosition && state.userPos) {
             state.map.flyTo([state.userPos.lat, state.userPos.lng], 16, { duration: 0.8 });
         } else {
-            startLocationWatch();
+            retryLocation();
         }
     });
+
+    dom.btnLocationRetry.addEventListener('click', retryLocation);
 
     // Brandposition-Modus an/aus
     dom.btnSetFire.addEventListener('click', () => {

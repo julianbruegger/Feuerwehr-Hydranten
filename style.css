@@ -267,6 +267,68 @@ body {
   cursor: pointer;
 }
 
+/* ----- Location Alert Banner ----- */
+.location-alert {
+  position: absolute;
+  bottom: 100px;
+  left: 12px;
+  right: 12px;
+  background: rgba(15, 15, 20, 0.92);
+  border: 1px solid rgba(244, 162, 97, 0.45);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 12px 14px;
+  border-radius: var(--radius-card);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  z-index: 600;
+  animation: slideUp 0.3s ease;
+}
+
+.location-alert[hidden] {
+  display: none;
+}
+
+.location-alert__text {
+  flex: 1;
+  line-height: 1.4;
+}
+
+.location-alert__btn {
+  flex-shrink: 0;
+  background: var(--accent-amber);
+  color: #0f0f14;
+  border: none;
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 7px 14px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.2s;
+}
+
+.location-alert__btn:hover {
+  opacity: 0.85;
+}
+
+/* My Location FAB pulses amber when no real GPS fix yet */
+@keyframes location-pulse {
+  0%   { box-shadow: 0 0 0 0   rgba(244, 162, 97, 0.55); }
+  70%  { box-shadow: 0 0 0 10px rgba(244, 162, 97, 0);   }
+  100% { box-shadow: 0 0 0 0   rgba(244, 162, 97, 0);    }
+}
+
+.fab--needs-location {
+  animation: location-pulse 2s ease-out infinite !important;
+}
+
 @keyframes slideUp {
   from {
     transform: translateY(16px);
