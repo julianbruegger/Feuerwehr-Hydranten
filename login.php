@@ -25,7 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     // Admin login — uses ADMIN_PASSWORD_HASH constant from config/db.php
-    if ($name === 'admin') {
+    if (strtolower($name) === 'admin') {
         if (!defined('ADMIN_PASSWORD_HASH') || !password_verify($pass, ADMIN_PASSWORD_HASH)) {
             sleep(1);
             jsonResponse(['error' => 'Ungültige Anmeldedaten'], 401);
