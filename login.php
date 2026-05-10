@@ -273,6 +273,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 localStorage.setItem('hw_token', data.token);
                 localStorage.setItem('hw_dept_name', data.dept_name);
                 localStorage.setItem('hw_expires', Date.now() + data.expires_in * 1000);
+                localStorage.setItem('hw_is_admin', data.is_admin ? '1' : '0');
 
                 window.location.href = '/admin/';
             } catch {

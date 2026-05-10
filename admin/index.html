@@ -410,6 +410,10 @@
             display: none;
         }
 
+        .hidden {
+            display: none !important;
+        }
+
         .modal {
             background: var(--surface);
             border-radius: 20px 20px 0 0;
@@ -605,6 +609,11 @@
             <div class="modal-title" id="modalTitle">Neuer Eintrag</div>
             <input type="hidden" id="editId" value="" />
 
+            <div class="form-field hidden" id="fieldDept">
+                <label class="form-label" for="fDept">Feuerwehr *</label>
+                <select class="form-select" id="fDept"></select>
+            </div>
+
             <div class="form-field">
                 <label class="form-label" for="fTitle">Objektname / Adresse *</label>
                 <input class="form-input" type="text" id="fTitle" placeholder="z.B. Luzernstrasse 12" />
@@ -647,11 +656,13 @@
         const token = localStorage.getItem('hw_token');
         const deptName = localStorage.getItem('hw_dept_name') || 'Feuerwehr';
         const expires = parseInt(localStorage.getItem('hw_expires') || '0', 10);
+        const isAdmin = localStorage.getItem('hw_is_admin') === '1';
 
         function clearAuth() {
             localStorage.removeItem('hw_token');
             localStorage.removeItem('hw_dept_name');
             localStorage.removeItem('hw_expires');
+            localStorage.removeItem('hw_is_admin');
             window.location.href = '/login.php';
         }
 
@@ -670,8 +681,21 @@
         const $fCat = document.getElementById('fCat');
         const $fContent = document.getElementById('fContent');
         const $btnSave = document.getElementById('btnSave');
+        const $fDept = document.getElementById('fDept');
+        const $fieldDept = document.getElementById('fieldDept');
 
         $deptName.textContent = deptName;
+
+        // ─── Feuerwehren laden (nur Admin) ────────────────────────────────────
+        let departments = [];
+        if (isAdmin) {
+            api('departments').then(data => {
+                if (Array.isArray(data)) {
+                    departments = data;
+                    $fDept.innerHTML = data.map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
+                }
+            });
+        }
 
         // ─── API-Helper ───────────────────────────────────────────────────────
         async function api(action, id, body) {
@@ -797,6 +821,8 @@
             $fLng.value = entry?.lng || '';
             $fCat.value = entry?.category || 'sonstiges';
             $fContent.value = entry?.content || '';
+            // Show dept selector only when admin is creating a new entry
+            $fieldDept.classList.toggle('hidden', !(isAdmin && !entry));
             $modalBackdrop.classList.remove('hidden');
             $fTitle.focus();
         }
@@ -833,6 +859,7 @@
                 category: $fCat.value,
                 content,
             };
+            if (isAdmin && !id) payload.dept_id = parseInt($fDept.value, 10);
 
             const result = await api(id ? 'update' : 'create', id || null, payload);
             if (result) {
