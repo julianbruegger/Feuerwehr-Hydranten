@@ -21,6 +21,26 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H ${{ secrets.HOSTPOINT_HOST }} >> ~/.ssh/known_hosts
 
+      - name: Generate config/db.php from secrets
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASS: ${{ secrets.DB_PASS }}
+          ADMIN_PASSWORD_HASH: ${{ secrets.ADMIN_PASSWORD_HASH }}
+        run: |
+          {
+            echo "<?php"
+            printf "define('DB_HOST',             '%s');\n" "$DB_HOST"
+            printf "define('DB_NAME',             '%s');\n" "$DB_NAME"
+            printf "define('DB_USER',             '%s');\n" "$DB_USER"
+            printf "define('DB_PASS',             '%s');\n" "$DB_PASS"
+            echo "define('DB_CHARSET',          'utf8mb4');"
+            printf "define('ADMIN_PASSWORD_HASH', '%s');\n" "$ADMIN_PASSWORD_HASH"
+            echo "define('SESSION_LIFETIME',    3600);"
+            echo "define('APP_NAME',            'Hydrantennavigator Admin');"
+          } > config/db.php
+
       - name: Deploy via rsync
         run: |
           rsync -avz --delete \
