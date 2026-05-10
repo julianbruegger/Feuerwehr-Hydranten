@@ -1,0 +1,18 @@
+# Sensitive server config — never commit
+config/db.php
+
+# Dependencies & build output
+node_modules/
+build/
+.svelte-kit/
+
+# Cache
+cache/*.json
+
+# Uploads
+uploads/
+
+# OS & editor
+.DS_Store
+Thumbs.db
+.env
