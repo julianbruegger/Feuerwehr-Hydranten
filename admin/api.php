@@ -17,20 +17,31 @@ header('Cache-Control: no-store');
 require_once __DIR__ . '/../config/auth_helper.php';
 
 // Token prüfen – bricht mit 401 ab wenn ungültig
-$deptId = requireAuth();
-$action = $_GET['action'] ?? '';
+$auth    = requireAuth();
+$isAdmin = $auth['is_admin'];
+$deptId  = $auth['dept_id'];
+$action  = $_GET['action'] ?? '';
 
 switch ($action) {
 
     // ── Alle Einträge abrufen ────────────────────────────────────────────
     case 'list':
-        $stmt = getDb()->prepare(
-            'SELECT id, title, address, lat, lng, category, content, updated_at
-             FROM sensitive_notes
-             WHERE department_id = ?
-             ORDER BY updated_at DESC'
-        );
-        $stmt->execute([$deptId]);
+        if ($isAdmin) {
+            $stmt = getDb()->prepare(
+                'SELECT id, title, address, lat, lng, category, content, updated_at
+                 FROM sensitive_notes
+                 ORDER BY updated_at DESC'
+            );
+            $stmt->execute([]);
+        } else {
+            $stmt = getDb()->prepare(
+                'SELECT id, title, address, lat, lng, category, content, updated_at
+                 FROM sensitive_notes
+                 WHERE department_id = ?
+                 ORDER BY updated_at DESC'
+            );
+            $stmt->execute([$deptId]);
+        }
         jsonResponse($stmt->fetchAll());
         break;
 
@@ -41,6 +52,12 @@ switch ($action) {
         $content = trim($data['content'] ?? '');
         if ($title === '' || $content === '')
             jsonResponse(['error' => 'Titel und Notiz sind Pflichtfelder'], 400);
+
+        if ($isAdmin) {
+            $deptId = (int) ($data['dept_id'] ?? 0);
+            if ($deptId <= 0)
+                jsonResponse(['error' => 'dept_id erforderlich'], 400);
+        }
 
         $category = in_array($data['category'] ?? '', ['schluessel', 'gefahrgut', 'gebaeude', 'kontakt', 'sonstiges'])
             ? $data['category'] : 'sonstiges';
@@ -74,21 +91,38 @@ switch ($action) {
 
         $category = in_array($data['category'] ?? '', ['schluessel', 'gefahrgut', 'gebaeude', 'kontakt', 'sonstiges'])
             ? $data['category'] : 'sonstiges';
-        $stmt = getDb()->prepare(
-            'UPDATE sensitive_notes
-             SET title=?, address=?, lat=?, lng=?, category=?, content=?
-             WHERE id=? AND department_id=?'
-        );
-        $stmt->execute([
-            $title,
-            trim($data['address'] ?? ''),
-            isset($data['lat']) ? (float) $data['lat'] : null,
-            isset($data['lng']) ? (float) $data['lng'] : null,
-            $category,
-            $content,
-            $id,
-            $deptId,
-        ]);
+        if ($isAdmin) {
+            $stmt = getDb()->prepare(
+                'UPDATE sensitive_notes
+                 SET title=?, address=?, lat=?, lng=?, category=?, content=?
+                 WHERE id=?'
+            );
+            $stmt->execute([
+                $title,
+                trim($data['address'] ?? ''),
+                isset($data['lat']) ? (float) $data['lat'] : null,
+                isset($data['lng']) ? (float) $data['lng'] : null,
+                $category,
+                $content,
+                $id,
+            ]);
+        } else {
+            $stmt = getDb()->prepare(
+                'UPDATE sensitive_notes
+                 SET title=?, address=?, lat=?, lng=?, category=?, content=?
+                 WHERE id=? AND department_id=?'
+            );
+            $stmt->execute([
+                $title,
+                trim($data['address'] ?? ''),
+                isset($data['lat']) ? (float) $data['lat'] : null,
+                isset($data['lng']) ? (float) $data['lng'] : null,
+                $category,
+                $content,
+                $id,
+                $deptId,
+            ]);
+        }
         jsonResponse(['ok' => true]);
         break;
 
@@ -97,10 +131,12 @@ switch ($action) {
         $id = (int) ($_GET['id'] ?? 0);
         if ($id <= 0)
             jsonResponse(['error' => 'Ungültige ID'], 400);
-        $stmt = getDb()->prepare(
-            'DELETE FROM sensitive_notes WHERE id=? AND department_id=?'
-        );
-        $stmt->execute([$id, $deptId]);
+        if ($isAdmin) {
+            getDb()->prepare('DELETE FROM sensitive_notes WHERE id=?')->execute([$id]);
+        } else {
+            getDb()->prepare('DELETE FROM sensitive_notes WHERE id=? AND department_id=?')
+                ->execute([$id, $deptId]);
+        }
         jsonResponse(['ok' => true]);
         break;
 

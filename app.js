@@ -62,6 +62,18 @@ async function overpassFetch(query, { retries = 2 } = {}) {
     }
 }
 
+async function serverProxyFetch(type, pos, radius) {
+    const params = new URLSearchParams({
+        type,
+        lat: pos.lat.toFixed(6),
+        lng: pos.lng.toFixed(6),
+        radius: String(radius),
+    });
+    const res = await fetch(`/api/overpass.php?${params}`);
+    if (!res.ok) throw new Error(`Proxy ${res.status}`);
+    return await res.json();
+}
+
 // ─────────────────────────────────────────
 // Hydrant-Cache (localStorage, 24h TTL)
 // ─────────────────────────────────────────
@@ -457,14 +469,8 @@ async function fetchHydrants() {
     } else {
         setStatus('Hydranten laden…', 'loading');
 
-        const hydrantQuery = `
-        [out:json][timeout:15];
-        node["emergency"="fire_hydrant"](around:${radius},${pos.lat},${pos.lng});
-        out body;
-      `;
-
         try {
-            const data = await overpassFetch(hydrantQuery);
+            const data = await serverProxyFetch('hydrants', pos, radius);
             setCachedHydrants(pos, radius, data.elements || []);
             processHydrantData(data.elements || []);
             setStatus(state.firePos ? 'Brandposition gesetzt' : 'Bereit', state.firePos ? 'fire' : 'ready');
@@ -482,19 +488,8 @@ async function fetchHydrants() {
 }
 
 async function fetchBarriers(pos, radius) {
-    const barrierQuery = `
-    [out:json][timeout:30];
-    (
-      way["waterway"~"^(river|stream|canal)$"](around:${radius},${pos.lat},${pos.lng});
-      way["railway"~"^(rail|tram|subway|light_rail|narrow_gauge)$"](around:${radius},${pos.lat},${pos.lng});
-      way["highway"]["bridge"="yes"](around:${radius},${pos.lat},${pos.lng});
-      way["highway"]["tunnel"="yes"](around:${radius},${pos.lat},${pos.lng});
-    );
-    out geom;
-  `;
-
     try {
-        const data = await overpassFetch(barrierQuery);
+        const data = await serverProxyFetch('barriers', pos, radius);
         processBarrierData(data.elements || []);
         sortAndRenderHydrants(); // Neu rendern mit Barriere-Infos
     } catch (e) {
@@ -985,15 +980,14 @@ function setStatus(text, type = 'default') {
 // Bottom-Sheet – Auf-/Zuklappen
 // ─────────────────────────────────────────
 
-/** Sheet öffnen und Leaflet-Karte invalidieren */
 function expandSheet() {
+    dom.bottomSheet.style.height = Math.round(window.innerHeight * 0.65) + 'px';
     dom.bottomSheet.classList.remove('collapsed');
-    // Kurz warten bis CSS-Transition fertig ist, dann Karte neu berechnen
     setTimeout(() => state.map && state.map.invalidateSize(), 360);
 }
 
-/** Sheet zuklappen */
 function collapseSheet() {
+    dom.bottomSheet.style.height = '84px';
     dom.bottomSheet.classList.add('collapsed');
     setTimeout(() => state.map && state.map.invalidateSize(), 360);
 }
@@ -1008,37 +1002,87 @@ function toggleSheet() {
 }
 
 function initSheetDrag() {
-    let touchStartY = 0;
-    let touchStartTime = 0;
+    const sheet = dom.bottomSheet;
+    const handle = dom.sheetHandle;
 
-    // Tipp auf Handle → auf-/zuklappen
-    dom.sheetHandle.addEventListener('click', toggleSheet);
+    const SNAP_COLLAPSED = 84;
+    const snapMid = () => Math.round(window.innerHeight * 0.40);
+    const snapExpanded = () => Math.round(window.innerHeight * 0.65);
 
-    // Swipe auf Handle: nach oben → öffnen, nach unten → schließen
-    dom.sheetHandle.addEventListener('touchstart', (e) => {
-        touchStartY = e.touches[0].clientY;
-        touchStartTime = Date.now();
-    }, { passive: true });
+    let dragStartY = 0;
+    let dragStartH = 0;
+    let isDragging = false;
+    let lastY = 0;
+    let lastTime = 0;
+    let velocity = 0; // px/ms, positive = upward
 
-    dom.sheetHandle.addEventListener('touchend', (e) => {
-        const deltaY = touchStartY - e.changedTouches[0].clientY;
-        const elapsed = Date.now() - touchStartTime;
-        // Nur als Swipe werten wenn ≥ 20px in ≤ 350ms
-        if (Math.abs(deltaY) < 20 || elapsed > 350) return;
-        if (deltaY > 0) expandSheet();
-        else collapseSheet();
-    }, { passive: true });
+    function snapTo(h) {
+        const snaps = [SNAP_COLLAPSED, snapMid(), snapExpanded()];
+        const projected = h + velocity * 120;
+        const target = snaps.reduce((a, b) =>
+            Math.abs(b - projected) < Math.abs(a - projected) ? b : a
+        );
+        sheet.style.transition = '';
+        sheet.style.height = target + 'px';
+        sheet.classList.toggle('collapsed', target === SNAP_COLLAPSED);
+        setTimeout(() => state.map && state.map.invalidateSize(), 360);
+    }
 
-    // Swipe-down auf dem Sheet-Inhalt schließt das Sheet (wenn ganz oben gescrollt)
+    handle.addEventListener('pointerdown', (e) => {
+        dragStartY = e.clientY;
+        dragStartH = sheet.offsetHeight;
+        isDragging = false;
+        lastY = e.clientY;
+        lastTime = Date.now();
+        velocity = 0;
+        handle.setPointerCapture(e.pointerId);
+    });
+
+    handle.addEventListener('pointermove', (e) => {
+        const now = Date.now();
+        const dt = now - lastTime;
+        if (dt > 0) velocity = (lastY - e.clientY) / dt;
+        lastY = e.clientY;
+        lastTime = now;
+        const deltaY = dragStartY - e.clientY;
+        if (!isDragging && Math.abs(deltaY) < 6) return;
+        isDragging = true;
+        const newH = Math.max(SNAP_COLLAPSED, Math.min(snapExpanded(), dragStartH + deltaY));
+        sheet.style.transition = 'none';
+        sheet.style.height = newH + 'px';
+    });
+
+    handle.addEventListener('pointerup', () => {
+        if (!isDragging) {
+            const h = sheet.offsetHeight;
+            sheet.style.transition = '';
+            if (h <= SNAP_COLLAPSED + 10) {
+                sheet.style.height = snapMid() + 'px';
+                sheet.classList.remove('collapsed');
+            } else {
+                sheet.style.height = SNAP_COLLAPSED + 'px';
+                sheet.classList.add('collapsed');
+            }
+            setTimeout(() => state.map && state.map.invalidateSize(), 360);
+            return;
+        }
+        snapTo(sheet.offsetHeight);
+    });
+
     const contentEl = document.getElementById('sheetContent');
     let contentTouchY = 0;
     contentEl.addEventListener('touchstart', (e) => {
         contentTouchY = e.touches[0].clientY;
     }, { passive: true });
     contentEl.addEventListener('touchend', (e) => {
-        if (contentEl.scrollTop > 0) return; // Nur wenn ganz oben
+        if (contentEl.scrollTop > 0) return;
         const deltaY = contentTouchY - e.changedTouches[0].clientY;
-        if (deltaY < -50) collapseSheet();
+        if (deltaY < -50) {
+            sheet.style.transition = '';
+            sheet.style.height = SNAP_COLLAPSED + 'px';
+            sheet.classList.add('collapsed');
+            setTimeout(() => state.map && state.map.invalidateSize(), 360);
+        }
     }, { passive: true });
 }
 

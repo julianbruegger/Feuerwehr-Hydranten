@@ -24,6 +24,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         jsonResponse(['error' => 'Name und Passwort erforderlich'], 400);
     }
 
+    // Admin login — uses ADMIN_PASSWORD_HASH constant from config/db.php
+    if ($name === 'admin') {
+        if (!defined('ADMIN_PASSWORD_HASH') || !password_verify($pass, ADMIN_PASSWORD_HASH)) {
+            sleep(1);
+            jsonResponse(['error' => 'Ungültige Anmeldedaten'], 401);
+        }
+        $token = createToken(null, true);
+        jsonResponse([
+            'token'      => $token,
+            'expires_in' => 365 * 24 * 3600,
+            'dept_name'  => 'Admin',
+            'is_admin'   => true,
+        ]);
+    }
+
     $db = getDb();
     $stmt = $db->prepare('SELECT id, password_hash FROM fire_departments WHERE name = ? LIMIT 1');
     $stmt->execute([$name]);
