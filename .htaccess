@@ -1,0 +1,18 @@
+Options -Indexes
+RewriteEngine On
+
+# Pass Authorization header through to PHP (Apache strips it by default)
+RewriteRule ^ - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+# Route API calls to PHP files
+RewriteRule ^api/login$             php/api/login.php             [L]
+RewriteRule ^api/logout$            php/api/logout.php            [L]
+RewriteRule ^api/hoses$             php/api/hoses.php             [L,QSA]
+RewriteRule ^admin/api/notes$       php/admin/api/notes.php       [L,QSA]
+RewriteRule ^admin/api/substations$ php/admin/api/substations.php [L,QSA]
+RewriteRule ^admin/api/wtp$         php/admin/api/wtp.php         [L,QSA]
+
+# SPA fallback — any path that isn't a real file serves index.html
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.html [L]

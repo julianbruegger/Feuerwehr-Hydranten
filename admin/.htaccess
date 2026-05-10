@@ -1,3 +1,9 @@
+Options -Indexes
+RewriteEngine On
+
+# Pass Authorization header through to PHP (Apache strips it by default)
+RewriteRule ^ - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
 # Der Zugriffsschutz für PHP-Dateien erfolgt direkt in den jeweiligen
 # API-Dateien (api.php, wtp_api.php) über den Token-Check (auth_helper.php).
 # Ein genereller Block in der .htaccess würde die AJAX-Aufrufe verhindern.
