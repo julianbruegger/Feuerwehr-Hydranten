@@ -24,6 +24,14 @@ $action  = $_GET['action'] ?? '';
 
 switch ($action) {
 
+    // ── Feuerwehren auflisten (nur Admin) ────────────────────────────────
+    case 'departments':
+        if (!$isAdmin) jsonResponse(['error' => 'Nicht erlaubt'], 403);
+        $stmt = getDb()->prepare('SELECT id, name FROM fire_departments ORDER BY name ASC');
+        $stmt->execute([]);
+        jsonResponse($stmt->fetchAll());
+        break;
+
     // ── Alle Einträge abrufen ────────────────────────────────────────────
     case 'list':
         if ($isAdmin) {
