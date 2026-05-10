@@ -111,6 +111,7 @@ const dom = {
     statusText:    document.getElementById('statusText'),
     btnMyLocation: document.getElementById('btnMyLocation'),
     btnToggleAll:  document.getElementById('btnToggleAll'),
+    btnBasemap:    document.getElementById('btnBasemap'),
     btnRefresh:    document.getElementById('btnRefresh'),
     sheetHandle:   document.getElementById('sheetHandle'),
     bottomSheet:   document.getElementById('bottomSheet'),
@@ -173,6 +174,15 @@ function substationMeta(tags) {
 function substationDisplayName(tags) {
     // VKs often have their designation in the name (e.g. "VK Industriestrasse 1") or ref
     return tags.name || tags.ref || tags['ref:vk'] || tags.operator || '';
+}
+
+function getOsmImageUrl(tags) {
+    if (tags?.image && /^https?:\/\//i.test(tags.image)) return tags.image;
+    if (tags?.wikimedia_commons) {
+        const file = tags.wikimedia_commons.replace(/^File:/i, '');
+        return `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(file)}`;
+    }
+    return null;
 }
 
 // ─────────────────────────────────────────
@@ -251,10 +261,17 @@ function initMap() {
     state.map = L.map('map', { zoomControl: false, attributionControl: true })
         .setView([47.0409, 8.3005], 15);
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© <a href="https://openstreetmap.org">OpenStreetMap</a>',
-        maxZoom: 19,
-    }).addTo(state.map);
+    state.layers = {
+        osm: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© <a href="https://openstreetmap.org">OpenStreetMap</a>',
+            maxZoom: 19,
+        }),
+        swisstopo: L.tileLayer('https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe/default/current/3857/{z}/{x}/{y}.png', {
+            attribution: '© <a href="https://www.swisstopo.admin.ch">swisstopo</a>',
+            maxZoom: 19,
+        }),
+    };
+    state.layers.osm.addTo(state.map);
 
     L.control.zoom({ position: 'topleft' }).addTo(state.map);
 }
@@ -431,12 +448,17 @@ function renderSubstations() {
 
         const voltageInfo = s.tags.voltage ? `<br/>⚡ ${esc(s.tags.voltage)} V` : '';
         const operatorInfo = s.tags.operator ? `<br/>🏢 ${esc(s.tags.operator)}` : '';
+        const popupImageUrl = getOsmImageUrl(s.tags);
+        const popupImageHtml = popupImageUrl
+            ? `<img src="${popupImageUrl}" style="width:100%;max-height:110px;object-fit:cover;border-radius:4px;margin-top:5px;display:block" loading="lazy" onerror="this.remove()"/>`
+            : '';
         const popup = `
             <b style="color:${meta.color}">${meta.icon} ${esc(name || meta.label)}</b><br/>
             <span style="font-size:12px;color:#8a8a9a">${meta.label}</span>
             ${voltageInfo}${operatorInfo}
             <br/>📏 ${formatDist(s.distM)}
             ${buildingList}
+            ${popupImageHtml}
         `;
 
         const marker = L.marker([s.lat, s.lng], {
@@ -483,6 +505,18 @@ function toggleAllSubstations() {
     else clearAllSubstationMarkers();
 }
 
+function toggleBasemap() {
+    const useSwisstopo = !state.map.hasLayer(state.layers.swisstopo);
+    if (useSwisstopo) {
+        state.map.removeLayer(state.layers.osm);
+        state.layers.swisstopo.addTo(state.map);
+    } else {
+        state.map.removeLayer(state.layers.swisstopo);
+        state.layers.osm.addTo(state.map);
+    }
+    dom.btnBasemap.classList.toggle('active', useSwisstopo);
+}
+
 function focusSubstation(s, index) {
     state.map.flyTo([s.lat, s.lng], 18, { duration: 0.7 });
 
@@ -521,6 +555,11 @@ function renderList(substations) {
             ? `<br/><span class="hydrant-detail" style="color:#38bdf8">🏠 ${assigned.map(a => esc(a.building_name)).join(', ')}</span>`
             : '';
 
+        const imageUrl = getOsmImageUrl(s.tags);
+        const imageHtml = imageUrl
+            ? `<figure class="hydrant-photo"><img src="${imageUrl}" alt="" loading="lazy" onerror="this.parentElement.remove()"/></figure>`
+            : '';
+
         return `<li class="hydrant-item${i === 0 ? ' hydrant-item--nearest' : ''}" data-id="${esc(s.id)}" data-index="${i}">
             <div class="hydrant-rank" style="background:${meta.color};color:#0f0f14">${i + 1}</div>
             <div class="hydrant-info">
@@ -529,6 +568,7 @@ function renderList(substations) {
                 ${operatorStr}${buildingStr}
             </div>
             <div class="hydrant-distance">${formatDist(s.distM)}</div>
+            ${imageHtml}
         </li>`;
     }).join('');
 }
@@ -653,6 +693,7 @@ function initEventListeners() {
     });
 
     dom.btnToggleAll.addEventListener('click', toggleAllSubstations);
+    dom.btnBasemap.addEventListener('click', toggleBasemap);
 
     dom.btnRefresh.addEventListener('click', () => {
         // Cache für aktuelle Position löschen damit frische Daten geladen werden
