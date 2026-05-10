@@ -60,37 +60,52 @@ if ($action === 'map_data') {
 
 // Alle anderen Endpoints: Token aus Header ODER GET-Param prüfen
 $tokenStr = getToken();
-$deptId = $tokenStr ? validateToken($tokenStr) : null;
-if ($deptId === null) {
+$authInfo = $tokenStr ? validateToken($tokenStr) : null;
+if ($authInfo === null) {
     http_response_code(401);
     header('Content-Type: application/json');
     echo json_encode(['error' => 'Nicht authentifiziert']);
     exit;
 }
+$isAdmin = $authInfo['is_admin'];
+$deptId  = $authInfo['dept_id'];
 
 switch ($action) {
 
     // ── Alle Pläne abrufen ───────────────────────────────────────────────
     case 'list':
-        $stmt = getDb()->prepare(
-            'SELECT p.id, p.name, p.description, p.lat, p.lng, p.updated_at,
-                    COUNT(f.id) AS file_count
-             FROM wasser_transport_plans p
-             LEFT JOIN wtp_files f ON f.plan_id = p.id
-             WHERE p.department_id = ?
-             GROUP BY p.id
-             ORDER BY p.updated_at DESC'
-        );
-        $stmt->execute([$deptId]);
+        if ($isAdmin) {
+            $stmt = getDb()->prepare(
+                'SELECT p.id, p.name, p.description, p.lat, p.lng, p.updated_at,
+                        COUNT(f.id) AS file_count
+                 FROM wasser_transport_plans p
+                 LEFT JOIN wtp_files f ON f.plan_id = p.id
+                 GROUP BY p.id
+                 ORDER BY p.updated_at DESC'
+            );
+            $stmt->execute([]);
+        } else {
+            $stmt = getDb()->prepare(
+                'SELECT p.id, p.name, p.description, p.lat, p.lng, p.updated_at,
+                        COUNT(f.id) AS file_count
+                 FROM wasser_transport_plans p
+                 LEFT JOIN wtp_files f ON f.plan_id = p.id
+                 WHERE p.department_id = ?
+                 GROUP BY p.id
+                 ORDER BY p.updated_at DESC'
+            );
+            $stmt->execute([$deptId]);
+        }
         jsonResponse($stmt->fetchAll());
         break;
 
     // ── Dateien eines Plans abrufen ──────────────────────────────────────
     case 'files':
         $planId = (int) ($_GET['plan_id'] ?? 0);
-        // Nur Dateien eigener Pläne
-        $check = getDb()->prepare('SELECT id FROM wasser_transport_plans WHERE id=? AND department_id=?');
-        $check->execute([$planId, $deptId]);
+        $check = $isAdmin
+            ? getDb()->prepare('SELECT id FROM wasser_transport_plans WHERE id=?')
+            : getDb()->prepare('SELECT id FROM wasser_transport_plans WHERE id=? AND department_id=?');
+        $check->execute($isAdmin ? [$planId] : [$planId, $deptId]);
         if (!$check->fetch())
             jsonResponse(['error' => 'Nicht gefunden'], 404);
 
@@ -108,6 +123,12 @@ switch ($action) {
         $name = trim($data['name'] ?? '');
         if ($name === '')
             jsonResponse(['error' => 'Plan-Name erforderlich'], 400);
+
+        if ($isAdmin) {
+            $deptId = (int) ($data['dept_id'] ?? 0);
+            if ($deptId <= 0)
+                jsonResponse(['error' => 'dept_id erforderlich'], 400);
+        }
 
         $stmt = getDb()->prepare(
             'INSERT INTO wasser_transport_plans (department_id, name, description, lat, lng)
@@ -133,19 +154,32 @@ switch ($action) {
         if ($name === '')
             jsonResponse(['error' => 'Plan-Name erforderlich'], 400);
 
-        $stmt = getDb()->prepare(
-            'UPDATE wasser_transport_plans
-             SET name=?, description=?, lat=?, lng=?
-             WHERE id=? AND department_id=?'
-        );
-        $stmt->execute([
-            $name,
-            trim($data['description'] ?? ''),
-            isset($data['lat']) ? (float) $data['lat'] : null,
-            isset($data['lng']) ? (float) $data['lng'] : null,
-            $id,
-            $deptId,
-        ]);
+        if ($isAdmin) {
+            $stmt = getDb()->prepare(
+                'UPDATE wasser_transport_plans SET name=?, description=?, lat=?, lng=? WHERE id=?'
+            );
+            $stmt->execute([
+                $name,
+                trim($data['description'] ?? ''),
+                isset($data['lat']) ? (float) $data['lat'] : null,
+                isset($data['lng']) ? (float) $data['lng'] : null,
+                $id,
+            ]);
+        } else {
+            $stmt = getDb()->prepare(
+                'UPDATE wasser_transport_plans
+                 SET name=?, description=?, lat=?, lng=?
+                 WHERE id=? AND department_id=?'
+            );
+            $stmt->execute([
+                $name,
+                trim($data['description'] ?? ''),
+                isset($data['lat']) ? (float) $data['lat'] : null,
+                isset($data['lng']) ? (float) $data['lng'] : null,
+                $id,
+                $deptId,
+            ]);
+        }
         jsonResponse(['ok' => true]);
         break;
 
@@ -155,26 +189,28 @@ switch ($action) {
         if ($id <= 0)
             jsonResponse(['error' => 'Ungültige ID'], 400);
         // Dateien vom Dateisystem löschen
-        $stmt = getDb()->prepare(
-            'SELECT stored_name FROM wtp_files
-             WHERE plan_id IN (SELECT id FROM wasser_transport_plans WHERE id=? AND department_id=?)'
-        );
-        $stmt->execute([$id, $deptId]);
+        $stmt = getDb()->prepare('SELECT stored_name FROM wtp_files WHERE plan_id=?');
+        $stmt->execute([$id]);
         foreach ($stmt->fetchAll() as $row) {
             @unlink(UPLOAD_DIR . $row['stored_name']);
         }
         // DB-Eintrag löschen (Cascade löscht auch wtp_files)
-        getDb()->prepare('DELETE FROM wasser_transport_plans WHERE id=? AND department_id=?')
-            ->execute([$id, $deptId]);
+        if ($isAdmin) {
+            getDb()->prepare('DELETE FROM wasser_transport_plans WHERE id=?')->execute([$id]);
+        } else {
+            getDb()->prepare('DELETE FROM wasser_transport_plans WHERE id=? AND department_id=?')
+                ->execute([$id, $deptId]);
+        }
         jsonResponse(['ok' => true]);
         break;
 
     // ── Datei hochladen ──────────────────────────────────────────────────
     case 'upload':
         $planId = (int) ($_GET['plan_id'] ?? 0);
-        // Zugehörigkeit prüfen
-        $check = getDb()->prepare('SELECT id FROM wasser_transport_plans WHERE id=? AND department_id=?');
-        $check->execute([$planId, $deptId]);
+        $check = $isAdmin
+            ? getDb()->prepare('SELECT id FROM wasser_transport_plans WHERE id=?')
+            : getDb()->prepare('SELECT id FROM wasser_transport_plans WHERE id=? AND department_id=?');
+        $check->execute($isAdmin ? [$planId] : [$planId, $deptId]);
         if (!$check->fetch())
             jsonResponse(['error' => 'Nicht gefunden'], 404);
 
@@ -214,13 +250,20 @@ switch ($action) {
     // ── Datei herunterladen (Auth-geschützt) ─────────────────────────────
     case 'download':
         $fileId = (int) ($_GET['file_id'] ?? 0);
-        $stmt = getDb()->prepare(
-            'SELECT f.stored_name, f.original_name, f.mime_type
-             FROM wtp_files f
-             JOIN wasser_transport_plans p ON p.id = f.plan_id
-             WHERE f.id = ? AND p.department_id = ?'
-        );
-        $stmt->execute([$fileId, $deptId]);
+        if ($isAdmin) {
+            $stmt = getDb()->prepare(
+                'SELECT stored_name, original_name, mime_type FROM wtp_files WHERE id = ?'
+            );
+            $stmt->execute([$fileId]);
+        } else {
+            $stmt = getDb()->prepare(
+                'SELECT f.stored_name, f.original_name, f.mime_type
+                 FROM wtp_files f
+                 JOIN wasser_transport_plans p ON p.id = f.plan_id
+                 WHERE f.id = ? AND p.department_id = ?'
+            );
+            $stmt->execute([$fileId, $deptId]);
+        }
         $row = $stmt->fetch();
         if (!$row)
             jsonResponse(['error' => 'Datei nicht gefunden'], 404);
@@ -242,12 +285,17 @@ switch ($action) {
         $fileId = (int) ($_GET['id'] ?? $_GET['file_id'] ?? 0);
         if ($fileId <= 0)
             jsonResponse(['error' => 'Ungültige Datei-ID'], 400);
-        $stmt = getDb()->prepare(
-            'SELECT f.stored_name FROM wtp_files f
-             JOIN wasser_transport_plans p ON p.id = f.plan_id
-             WHERE f.id=? AND p.department_id=?'
-        );
-        $stmt->execute([$fileId, $deptId]);
+        if ($isAdmin) {
+            $stmt = getDb()->prepare('SELECT stored_name FROM wtp_files WHERE id=?');
+            $stmt->execute([$fileId]);
+        } else {
+            $stmt = getDb()->prepare(
+                'SELECT f.stored_name FROM wtp_files f
+                 JOIN wasser_transport_plans p ON p.id = f.plan_id
+                 WHERE f.id=? AND p.department_id=?'
+            );
+            $stmt->execute([$fileId, $deptId]);
+        }
         $row = $stmt->fetch();
         if (!$row)
             jsonResponse(['error' => 'Nicht gefunden'], 404);
@@ -266,15 +314,26 @@ switch ($action) {
 // Benötigt gültigen Token um die Daten der eigenen Feuerwehr abzurufen.
 function serveMapData()
 {
-    $token = getToken();
-    $deptId = $token ? validateToken($token) : null;
-    if ($deptId === null)
+    $token    = getToken();
+    $authInfo = $token ? validateToken($token) : null;
+    if ($authInfo === null)
         jsonResponse([], 200); // Nicht eingeloggt → leere Liste
 
-    $stmt = getDb()->prepare(
-        'SELECT id, name, lat, lng FROM wasser_transport_plans
-         WHERE department_id = ? AND lat IS NOT NULL AND lng IS NOT NULL'
-    );
-    $stmt->execute([$deptId]);
+    $isAdmin = $authInfo['is_admin'];
+    $deptId  = $authInfo['dept_id'];
+
+    if ($isAdmin) {
+        $stmt = getDb()->prepare(
+            'SELECT id, name, lat, lng FROM wasser_transport_plans
+             WHERE lat IS NOT NULL AND lng IS NOT NULL'
+        );
+        $stmt->execute([]);
+    } else {
+        $stmt = getDb()->prepare(
+            'SELECT id, name, lat, lng FROM wasser_transport_plans
+             WHERE department_id = ? AND lat IS NOT NULL AND lng IS NOT NULL'
+        );
+        $stmt->execute([$deptId]);
+    }
     jsonResponse($stmt->fetchAll());
 }

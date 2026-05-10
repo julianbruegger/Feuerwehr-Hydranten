@@ -36,21 +36,25 @@ function getDb()
  * Prüft einen Bearer-Token aus dem Authorization-Header oder POST-Body.
  * Gibt die Department-ID zurück, oder null wenn ungültig/abgelaufen.
  */
-function validateToken($token)
+function validateToken($token): ?array
 {
     if (strlen($token) !== 64)
         return null;
 
     $db = getDb();
     $stmt = $db->prepare(
-        'SELECT department_id FROM auth_tokens
+        'SELECT department_id, is_admin FROM auth_tokens
          WHERE token = ? AND expires_at > NOW()
          LIMIT 1'
     );
     $stmt->execute([$token]);
     $row = $stmt->fetch();
 
-    return $row ? (int) $row['department_id'] : null;
+    if (!$row) return null;
+    return [
+        'dept_id'  => $row['department_id'] !== null ? (int) $row['department_id'] : null,
+        'is_admin' => (bool) $row['is_admin'],
+    ];
 }
 
 /**
@@ -74,18 +78,18 @@ function getTokenFromRequest()
  * Prüft Request-Auth und gibt Department-ID zurück.
  * Bricht mit 401 JSON ab wenn nicht authentifiziert.
  */
-function requireAuth()
+function requireAuth(): array
 {
     $token = getTokenFromRequest();
-    $deptId = $token ? validateToken($token) : null;
+    $auth  = $token ? validateToken($token) : null;
 
-    if ($deptId === null) {
+    if ($auth === null) {
         http_response_code(401);
         header('Content-Type: application/json');
         echo json_encode(['error' => 'Nicht authentifiziert']);
         exit;
     }
-    return $deptId;
+    return $auth;
 }
 
 // ─── Token erstellen ───────────────────────────────────────────────────────
@@ -94,16 +98,16 @@ function requireAuth()
  * Erstellt einen neuen Langzeit-Token (365 Tage) für eine Feuerwehr.
  * Gibt den Token-String zurück.
  */
-function createToken($departmentId)
+function createToken(?int $departmentId, bool $isAdmin = false): string
 {
     $token = bin2hex(random_bytes(32));   // 64 hex chars
     $expiresAt = date('Y-m-d H:i:s', strtotime('+365 days'));
 
     $db = getDb();
     $stmt = $db->prepare(
-        'INSERT INTO auth_tokens (department_id, token, expires_at) VALUES (?, ?, ?)'
+        'INSERT INTO auth_tokens (department_id, is_admin, token, expires_at) VALUES (?, ?, ?, ?)'
     );
-    $stmt->execute([$departmentId, $token, $expiresAt]);
+    $stmt->execute([$departmentId, $isAdmin ? 1 : 0, $token, $expiresAt]);
 
     return $token;
 }

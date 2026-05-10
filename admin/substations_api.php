@@ -18,8 +18,10 @@ header('Cache-Control: no-store');
 
 require_once __DIR__ . '/../config/auth_helper.php';
 
-$deptId = requireAuth();
-$action = $_GET['action'] ?? '';
+$auth    = requireAuth();
+$isAdmin = $auth['is_admin'];
+$deptId  = $auth['dept_id'];
+$action  = $_GET['action'] ?? '';
 
 switch ($action) {
 
@@ -33,36 +35,67 @@ switch ($action) {
             if (!in_array($osmType, $allowedTypes, true)) {
                 jsonResponse(['error' => 'Ungültiger osm_type'], 400);
             }
-            $stmt = getDb()->prepare(
-                'SELECT id, substation_osm_type, substation_osm_id, substation_name,
-                        building_name, building_address, building_lat, building_lng, notes, updated_at
-                 FROM substation_assignments
-                 WHERE department_id = ? AND substation_osm_type = ? AND substation_osm_id = ?
-                 ORDER BY building_name ASC'
-            );
-            $stmt->execute([$deptId, $osmType, $osmId]);
+            if ($isAdmin) {
+                $stmt = getDb()->prepare(
+                    'SELECT id, substation_osm_type, substation_osm_id, substation_name,
+                            building_name, building_address, building_lat, building_lng, notes, updated_at
+                     FROM substation_assignments
+                     WHERE substation_osm_type = ? AND substation_osm_id = ?
+                     ORDER BY building_name ASC'
+                );
+                $stmt->execute([$osmType, $osmId]);
+            } else {
+                $stmt = getDb()->prepare(
+                    'SELECT id, substation_osm_type, substation_osm_id, substation_name,
+                            building_name, building_address, building_lat, building_lng, notes, updated_at
+                     FROM substation_assignments
+                     WHERE department_id = ? AND substation_osm_type = ? AND substation_osm_id = ?
+                     ORDER BY building_name ASC'
+                );
+                $stmt->execute([$deptId, $osmType, $osmId]);
+            }
         } else {
-            $stmt = getDb()->prepare(
-                'SELECT id, substation_osm_type, substation_osm_id, substation_name,
-                        building_name, building_address, building_lat, building_lng, notes, updated_at
-                 FROM substation_assignments
-                 WHERE department_id = ?
-                 ORDER BY substation_osm_id ASC, building_name ASC'
-            );
-            $stmt->execute([$deptId]);
+            if ($isAdmin) {
+                $stmt = getDb()->prepare(
+                    'SELECT id, substation_osm_type, substation_osm_id, substation_name,
+                            building_name, building_address, building_lat, building_lng, notes, updated_at
+                     FROM substation_assignments
+                     ORDER BY substation_osm_id ASC, building_name ASC'
+                );
+                $stmt->execute([]);
+            } else {
+                $stmt = getDb()->prepare(
+                    'SELECT id, substation_osm_type, substation_osm_id, substation_name,
+                            building_name, building_address, building_lat, building_lng, notes, updated_at
+                     FROM substation_assignments
+                     WHERE department_id = ?
+                     ORDER BY substation_osm_id ASC, building_name ASC'
+                );
+                $stmt->execute([$deptId]);
+            }
         }
         jsonResponse($stmt->fetchAll());
         break;
 
     // ── Kartendaten (nur Einträge mit Koordinaten) ───────────────────────
     case 'map_data':
-        $stmt = getDb()->prepare(
-            'SELECT id, substation_osm_type, substation_osm_id, substation_name,
-                    building_name, building_address, building_lat, building_lng
-             FROM substation_assignments
-             WHERE department_id = ? AND building_lat IS NOT NULL AND building_lng IS NOT NULL'
-        );
-        $stmt->execute([$deptId]);
+        if ($isAdmin) {
+            $stmt = getDb()->prepare(
+                'SELECT id, substation_osm_type, substation_osm_id, substation_name,
+                        building_name, building_address, building_lat, building_lng
+                 FROM substation_assignments
+                 WHERE building_lat IS NOT NULL AND building_lng IS NOT NULL'
+            );
+            $stmt->execute([]);
+        } else {
+            $stmt = getDb()->prepare(
+                'SELECT id, substation_osm_type, substation_osm_id, substation_name,
+                        building_name, building_address, building_lat, building_lng
+                 FROM substation_assignments
+                 WHERE department_id = ? AND building_lat IS NOT NULL AND building_lng IS NOT NULL'
+            );
+            $stmt->execute([$deptId]);
+        }
         jsonResponse($stmt->fetchAll());
         break;
 
@@ -80,6 +113,12 @@ switch ($action) {
         }
         if ($buildingName === '') {
             jsonResponse(['error' => 'Gebäudename ist Pflichtfeld'], 400);
+        }
+
+        if ($isAdmin) {
+            $deptId = (int) ($data['dept_id'] ?? 0);
+            if ($deptId <= 0)
+                jsonResponse(['error' => 'dept_id erforderlich'], 400);
         }
 
         $stmt = getDb()->prepare(
@@ -111,22 +150,40 @@ switch ($action) {
         $buildingName = trim($data['building_name'] ?? '');
         if ($buildingName === '') jsonResponse(['error' => 'Gebäudename ist Pflichtfeld'], 400);
 
-        $stmt = getDb()->prepare(
-            'UPDATE substation_assignments
-             SET substation_name=?, building_name=?, building_address=?,
-                 building_lat=?, building_lng=?, notes=?
-             WHERE id=? AND department_id=?'
-        );
-        $stmt->execute([
-            trim($data['substation_name'] ?? '') ?: null,
-            $buildingName,
-            trim($data['building_address'] ?? '') ?: null,
-            isset($data['building_lat']) && $data['building_lat'] !== '' ? (float) $data['building_lat'] : null,
-            isset($data['building_lng']) && $data['building_lng'] !== '' ? (float) $data['building_lng'] : null,
-            trim($data['notes'] ?? '') ?: null,
-            $id,
-            $deptId,
-        ]);
+        if ($isAdmin) {
+            $stmt = getDb()->prepare(
+                'UPDATE substation_assignments
+                 SET substation_name=?, building_name=?, building_address=?,
+                     building_lat=?, building_lng=?, notes=?
+                 WHERE id=?'
+            );
+            $stmt->execute([
+                trim($data['substation_name'] ?? '') ?: null,
+                $buildingName,
+                trim($data['building_address'] ?? '') ?: null,
+                isset($data['building_lat']) && $data['building_lat'] !== '' ? (float) $data['building_lat'] : null,
+                isset($data['building_lng']) && $data['building_lng'] !== '' ? (float) $data['building_lng'] : null,
+                trim($data['notes'] ?? '') ?: null,
+                $id,
+            ]);
+        } else {
+            $stmt = getDb()->prepare(
+                'UPDATE substation_assignments
+                 SET substation_name=?, building_name=?, building_address=?,
+                     building_lat=?, building_lng=?, notes=?
+                 WHERE id=? AND department_id=?'
+            );
+            $stmt->execute([
+                trim($data['substation_name'] ?? '') ?: null,
+                $buildingName,
+                trim($data['building_address'] ?? '') ?: null,
+                isset($data['building_lat']) && $data['building_lat'] !== '' ? (float) $data['building_lat'] : null,
+                isset($data['building_lng']) && $data['building_lng'] !== '' ? (float) $data['building_lng'] : null,
+                trim($data['notes'] ?? '') ?: null,
+                $id,
+                $deptId,
+            ]);
+        }
         jsonResponse(['ok' => true]);
         break;
 
@@ -135,10 +192,12 @@ switch ($action) {
         $id = (int) ($_GET['id'] ?? 0);
         if ($id <= 0) jsonResponse(['error' => 'Ungültige ID'], 400);
 
-        $stmt = getDb()->prepare(
-            'DELETE FROM substation_assignments WHERE id=? AND department_id=?'
-        );
-        $stmt->execute([$id, $deptId]);
+        if ($isAdmin) {
+            getDb()->prepare('DELETE FROM substation_assignments WHERE id=?')->execute([$id]);
+        } else {
+            getDb()->prepare('DELETE FROM substation_assignments WHERE id=? AND department_id=?')
+                ->execute([$id, $deptId]);
+        }
         jsonResponse(['ok' => true]);
         break;
 
