@@ -136,6 +136,7 @@ const dom = {
     btnMyLocation: document.getElementById('btnMyLocation'),
     btnSetFire: document.getElementById('btnSetFire'),
     btnToggleAll: document.getElementById('btnToggleAll'),
+    btnBasemap: document.getElementById('btnBasemap'),
     btnRefresh: document.getElementById('btnRefresh'),
     modeBanner: document.getElementById('modeBanner'),
     btnCancelFire: document.getElementById('btnCancelFire'),
@@ -239,11 +240,17 @@ function initMap() {
         attributionControl: true,
     }).setView([47.0409, 8.3005], 15); // Neubad Luzern
 
-    // OpenStreetMap Tiles
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© <a href="https://openstreetmap.org">OpenStreetMap</a>',
-        maxZoom: 19,
-    }).addTo(state.map);
+    state.layers = {
+        osm: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© <a href="https://openstreetmap.org">OpenStreetMap</a>',
+            maxZoom: 19,
+        }),
+        swisstopo: L.tileLayer('https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe/default/current/3857/{z}/{x}/{y}.png', {
+            attribution: '© <a href="https://www.swisstopo.admin.ch">swisstopo</a>',
+            maxZoom: 19,
+        }),
+    };
+    state.layers.osm.addTo(state.map);
 
     // Zoom-Steuerung oben links (verhindert Überschneidung mit FABs rechts)
     L.control.zoom({ position: 'topleft' }).addTo(state.map);
@@ -679,6 +686,15 @@ function getHydrantAddress(tags) {
     return parts.join(' ') || '';
 }
 
+function getOsmImageUrl(tags) {
+    if (tags?.image && /^https?:\/\//i.test(tags.image)) return tags.image;
+    if (tags?.wikimedia_commons) {
+        const file = tags.wikimedia_commons.replace(/^File:/i, '');
+        return `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(file)}`;
+    }
+    return null;
+}
+
 // ─────────────────────────────────────────
 // Rendering – Bottom-Sheet-Liste
 // ─────────────────────────────────────────
@@ -714,6 +730,11 @@ function renderHydrantList(hydrants, hoseLength) {
             ? [...h.barrierTypes].map(t => `<span class="barrier-badge">${t === 'water' ? '🌊' : '🚂'}</span>`).join('')
             : '';
 
+        const imageUrl = getOsmImageUrl(h.tags);
+        const imageHtml = imageUrl
+            ? `<figure class="hydrant-photo"><img src="${imageUrl}" alt="" loading="lazy" onerror="this.parentElement.remove()"/></figure>`
+            : '';
+
         li.innerHTML = `
       <div class="hydrant-rank">${rank}</div>
       <div class="hydrant-info">
@@ -725,6 +746,7 @@ function renderHydrantList(hydrants, hoseLength) {
         <span class="hose-label">Schläuche</span>
         <span class="hose-dist">${distLabel}</span>
       </div>
+      ${imageHtml}
     `;
 
         li.addEventListener('click', () => selectHydrant(h));
@@ -762,12 +784,18 @@ function renderHydrantMarkers(hydrants, sourcePos, hoseLength) {
             ? `🚗 Fahrstrecke: <b>${formatDistance(h.routeDistM)}</b>`
             : `📏 Luftlinie: <b>~ ${formatDistance(h.distM)}</b>`;
 
+        const popupImageUrl = getOsmImageUrl(h.tags);
+        const popupImageHtml = popupImageUrl
+            ? `<img src="${popupImageUrl}" style="width:100%;max-height:110px;object-fit:cover;border-radius:4px;margin-top:5px;display:block" loading="lazy" onerror="this.remove()"/>`
+            : '';
+
         const popupContent = `
       <b>${label}</b><br/>
       ${address ? address + '<br/>' : ''}
       ${distInfo}<br/>
       🧯 Schläuche: <b>${sections}×</b> (à ${hoseLength} m)<br/>
       ${barrierWarning}
+      ${popupImageHtml}
     `;
 
         const marker = L.marker([h.lat, h.lng], {
@@ -775,7 +803,7 @@ function renderHydrantMarkers(hydrants, sourcePos, hoseLength) {
             zIndexOffset: isNearest ? 500 : 0,
         })
             .addTo(state.map)
-            .bindPopup(popupContent, { closeButton: false, maxWidth: 220 });
+            .bindPopup(popupContent, { closeButton: false, maxWidth: 240 });
 
         marker.on('click', () => selectHydrant(h));
         state.markers.hydrants.push(marker);
@@ -836,6 +864,18 @@ function toggleAllHydrants() {
     } else {
         clearAllHydrantMarkers();
     }
+}
+
+function toggleBasemap() {
+    const useSwisstopo = !state.map.hasLayer(state.layers.swisstopo);
+    if (useSwisstopo) {
+        state.map.removeLayer(state.layers.osm);
+        state.layers.swisstopo.addTo(state.map);
+    } else {
+        state.map.removeLayer(state.layers.swisstopo);
+        state.layers.osm.addTo(state.map);
+    }
+    dom.btnBasemap.classList.toggle('active', useSwisstopo);
 }
 
 // ─────────────────────────────────────────
@@ -1038,6 +1078,7 @@ function initEventListeners() {
 
     // Hydranten neu laden
     dom.btnToggleAll.addEventListener('click', toggleAllHydrants);
+    dom.btnBasemap.addEventListener('click', toggleBasemap);
     dom.btnRefresh.addEventListener('click', fetchHydrants);
 
     // Einstellungen geändert → neu berechnen
