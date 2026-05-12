@@ -47,15 +47,16 @@ function ensureSchema()
         throw new Exception("Failed to read schema file: $schemaFile");
     }
 
-    // Split by semicolon and execute each statement
+    // Strip single-line SQL comments, then split by semicolon
+    $schema = preg_replace('/^\s*--.*$/m', '', $schema);
     $statements = array_filter(
         array_map('trim', explode(';', $schema)),
-        fn($stmt) => strlen($stmt) > 0 && !preg_match('/^\s*--/', $stmt)
+        fn($stmt) => strlen($stmt) > 0
     );
 
     foreach ($statements as $stmt) {
         try {
-            $db->exec($stmt . ';');
+            $db->exec($stmt);
         } catch (PDOException $e) {
             throw new Exception("Failed to execute SQL: " . $e->getMessage());
         }
