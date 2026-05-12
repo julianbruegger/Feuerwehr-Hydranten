@@ -4,7 +4,7 @@
 
 CREATE TABLE IF NOT EXISTS substation_assignments (
     id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    department_id        INT UNSIGNED NOT NULL,
+    department_id        INT NOT NULL,
     substation_osm_type  VARCHAR(10)  NOT NULL,          -- 'node' | 'way' | 'relation'
     substation_osm_id    BIGINT       NOT NULL,
     substation_name      VARCHAR(255),                   -- optionaler Anzeigename
