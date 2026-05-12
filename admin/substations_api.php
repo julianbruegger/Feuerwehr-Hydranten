@@ -12,14 +12,6 @@
  * POST   ?action=delete&id=X                       → Zuordnung löschen
  */
 
-function jsonResponse($data, $code = 200)
-{
-    http_response_code($code);
-    header('Content-Type: application/json');
-    echo json_encode($data);
-    exit;
-}
-
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: DENY');
 header('Cache-Control: no-store');
