@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap"
         rel="stylesheet" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         :root {
             --bg: #0f0f14;
@@ -18,19 +19,14 @@
             --blue: #457b9d;
             --water: #38bdf8;
             --green: #4ade80;
+            --orange: #f97316;
             --text: #f1f1f5;
             --muted: #8a8a9a;
             --border: rgba(255, 255, 255, 0.07);
             --radius: 14px;
         }
 
-        *,
-        *::before,
-        *::after {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0
-        }
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
 
         body {
             font-family: 'Inter', system-ui, sans-serif;
@@ -42,775 +38,917 @@
 
         /* Topbar */
         .topbar {
-            position: sticky;
-            top: 0;
-            z-index: 100;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            padding: 0 16px;
-            height: 58px;
-            background: rgba(15, 15, 20, .95);
-            backdrop-filter: blur(16px);
+            position: sticky; top: 0; z-index: 100;
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 12px; padding: 0 16px; height: 58px;
+            background: rgba(15,15,20,.95); backdrop-filter: blur(16px);
             border-bottom: 1px solid var(--border)
         }
-
-        .topbar__left {
-            display: flex;
-            align-items: center;
-            gap: 10px
-        }
-
-        .topbar__title {
-            font-size: 15px;
-            font-weight: 700
-        }
-
+        .topbar__left { display: flex; align-items: center; gap: 10px }
+        .topbar__title { font-size: 15px; font-weight: 700 }
         .topbar__back {
-            padding: 7px 14px;
-            background: transparent;
-            border: 1px solid var(--border);
-            border-radius: 999px;
-            color: var(--muted);
-            font-family: inherit;
-            font-size: 13px;
-            font-weight: 600;
-            cursor: pointer;
-            text-decoration: none;
-            display: flex;
-            align-items: center;
-            gap: 5px
+            padding: 7px 14px; background: transparent; border: 1px solid var(--border);
+            border-radius: 999px; color: var(--muted); font-family: inherit;
+            font-size: 13px; font-weight: 600; cursor: pointer; text-decoration: none;
+            display: flex; align-items: center; gap: 5px
         }
-
-        .topbar__back:hover {
-            color: var(--text);
-            border-color: rgba(255, 255, 255, .2)
-        }
+        .topbar__back:hover { color: var(--text); border-color: rgba(255,255,255,.2) }
 
         /* Layout */
-        .container {
-            max-width: 720px;
-            margin: 0 auto;
-            padding: 24px 16px 80px
-        }
-
+        .container { max-width: 720px; margin: 0 auto; padding: 24px 16px 80px }
         .toolbar {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            margin-bottom: 20px;
-            flex-wrap: wrap
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 12px; margin-bottom: 20px; flex-wrap: wrap
         }
-
-        .toolbar__title {
-            font-size: 18px;
-            font-weight: 700
-        }
+        .toolbar__title { font-size: 18px; font-weight: 700 }
 
         .btn-primary {
-            display: flex;
-            align-items: center;
-            gap: 7px;
-            padding: 10px 18px;
-            background: var(--water);
-            color: #0f172a;
-            border: none;
-            border-radius: var(--radius);
-            font-family: inherit;
-            font-size: 14px;
-            font-weight: 700;
-            cursor: pointer;
-            white-space: nowrap;
-            transition: opacity .2s
+            display: flex; align-items: center; gap: 7px; padding: 10px 18px;
+            background: var(--water); color: #0f172a; border: none;
+            border-radius: var(--radius); font-family: inherit; font-size: 14px;
+            font-weight: 700; cursor: pointer; white-space: nowrap; transition: opacity .2s
         }
-
-        .btn-primary:hover {
-            opacity: .88
-        }
+        .btn-primary:hover { opacity: .88 }
 
         /* Plan Cards */
-        #plansList {
-            display: flex;
-            flex-direction: column;
-            gap: 10px
-        }
-
+        #plansList { display: flex; flex-direction: column; gap: 10px }
         .plan-card {
-            background: var(--card);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            overflow: hidden;
-            animation: fadeIn .2s ease
+            background: var(--card); border: 1px solid var(--border);
+            border-radius: var(--radius); overflow: hidden; animation: fadeIn .2s ease
         }
-
         .plan-header {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 16px;
-            cursor: pointer;
-            transition: background .2s
+            display: flex; align-items: center; gap: 12px; padding: 16px;
+            cursor: pointer; transition: background .2s
         }
-
-        .plan-header:hover {
-            background: var(--hover)
-        }
-
+        .plan-header:hover { background: var(--hover) }
         .plan-icon {
-            font-size: 24px;
-            width: 42px;
-            height: 42px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: rgba(56, 189, 248, .1);
-            border: 1px solid rgba(56, 189, 248, .3);
-            border-radius: 10px;
-            flex-shrink: 0
+            font-size: 24px; width: 42px; height: 42px;
+            display: flex; align-items: center; justify-content: center;
+            background: rgba(56,189,248,.1); border: 1px solid rgba(56,189,248,.3);
+            border-radius: 10px; flex-shrink: 0
         }
-
-        .plan-meta {
-            flex: 1;
-            min-width: 0
-        }
-
+        .plan-meta { flex: 1; min-width: 0 }
         .plan-name {
-            font-size: 15px;
-            font-weight: 600;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis
+            font-size: 15px; font-weight: 600;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis
         }
-
-        .plan-coords {
-            font-size: 12px;
-            color: var(--muted);
-            margin-top: 2px
-        }
-
-        .plan-actions {
-            display: flex;
-            gap: 6px;
-            flex-shrink: 0
-        }
+        .plan-coords { font-size: 12px; color: var(--muted); margin-top: 2px }
+        .plan-actions { display: flex; gap: 6px; flex-shrink: 0 }
 
         .icon-btn {
-            width: 34px;
-            height: 34px;
-            border: none;
-            border-radius: 8px;
-            background: var(--bg);
-            color: var(--muted);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            font-size: 15px;
-            transition: background .15s, color .15s
+            width: 34px; height: 34px; border: none; border-radius: 8px;
+            background: var(--bg); color: var(--muted);
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; font-size: 15px; transition: background .15s, color .15s
         }
+        .icon-btn:hover { background: var(--hover); color: var(--text) }
+        .icon-btn.del:hover { color: var(--red) }
 
-        .icon-btn:hover {
-            background: var(--hover);
-            color: var(--text)
-        }
-
-        .icon-btn.del:hover {
-            color: var(--red)
-        }
-
-        /* Plan Detail (ausgeklappt) */
         .plan-detail {
-            border-top: 1px solid var(--border);
-            padding: 16px;
-            display: none
+            border-top: 1px solid var(--border); padding: 16px; display: none
         }
-
-        .plan-detail.open {
-            display: block
-        }
-
+        .plan-detail.open { display: block }
         .plan-desc {
-            font-size: 13px;
-            color: var(--muted);
-            line-height: 1.6;
-            white-space: pre-wrap;
-            margin-bottom: 16px
+            font-size: 13px; color: var(--muted); line-height: 1.6;
+            white-space: pre-wrap; margin-bottom: 16px
         }
+
+        /* Map-edit button */
+        .btn-map-edit {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 8px 14px; background: rgba(249,115,22,.12);
+            border: 1px solid rgba(249,115,22,.35); border-radius: 10px;
+            color: var(--orange); font-family: inherit; font-size: 13px;
+            font-weight: 600; cursor: pointer; margin-bottom: 16px;
+            transition: background .2s
+        }
+        .btn-map-edit:hover { background: rgba(249,115,22,.22) }
 
         /* Datei-Upload */
         .files-section label.upload-label {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 11px 16px;
-            background: var(--bg);
-            border: 1.5px dashed var(--border);
-            border-radius: 10px;
-            cursor: pointer;
-            font-size: 13px;
-            color: var(--muted);
-            transition: border-color .2s, color .2s;
-            margin-bottom: 10px
+            display: flex; align-items: center; gap: 8px; padding: 11px 16px;
+            background: var(--bg); border: 1.5px dashed var(--border);
+            border-radius: 10px; cursor: pointer; font-size: 13px; color: var(--muted);
+            transition: border-color .2s, color .2s; margin-bottom: 10px
         }
-
-        .files-section label.upload-label:hover {
-            border-color: var(--water);
-            color: var(--water)
-        }
-
-        /* Datei-Liste */
-        .file-list {
-            display: flex;
-            flex-direction: column;
-            gap: 6px
-        }
-
+        .files-section label.upload-label:hover { border-color: var(--water); color: var(--water) }
+        .file-list { display: flex; flex-direction: column; gap: 6px }
         .file-item {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 10px 12px;
-            background: var(--bg);
-            border: 1px solid var(--border);
-            border-radius: 10px
+            display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+            background: var(--bg); border: 1px solid var(--border); border-radius: 10px
         }
-
-        .file-icon {
-            font-size: 18px;
-            flex-shrink: 0
-        }
-
+        .file-icon { font-size: 18px; flex-shrink: 0 }
         .file-name {
-            flex: 1;
-            font-size: 13px;
-            font-weight: 500;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis
+            flex: 1; font-size: 13px; font-weight: 500;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis
         }
-
-        .file-size {
-            font-size: 11px;
-            color: var(--muted);
-            flex-shrink: 0
-        }
-
+        .file-size { font-size: 11px; color: var(--muted); flex-shrink: 0 }
         .file-btn {
-            padding: 5px 12px;
-            border: none;
-            border-radius: 8px;
-            font-family: inherit;
-            font-size: 12px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: opacity .15s
+            padding: 5px 12px; border: none; border-radius: 8px;
+            font-family: inherit; font-size: 12px; font-weight: 600;
+            cursor: pointer; transition: opacity .15s
         }
-
-        .file-btn.view {
-            background: rgba(56, 189, 248, .12);
-            color: var(--water)
-        }
-
-        .file-btn.del {
-            background: rgba(230, 57, 70, .1);
-            color: var(--red)
-        }
-
-        .file-btn:hover {
-            opacity: .8
-        }
+        .file-btn.view { background: rgba(56,189,248,.12); color: var(--water) }
+        .file-btn.del  { background: rgba(230,57,70,.1); color: var(--red) }
+        .file-btn:hover { opacity: .8 }
 
         /* Empty */
         .empty {
-            text-align: center;
-            padding: 60px 20px;
-            color: var(--muted);
-            font-size: 14px
+            text-align: center; padding: 60px 20px; color: var(--muted); font-size: 14px
         }
+        .empty-icon { font-size: 48px; margin-bottom: 12px }
 
-        .empty-icon {
-            font-size: 48px;
-            margin-bottom: 12px
-        }
-
-        /* Modal */
+        /* Modal (create/edit plan) */
         .modal-backdrop {
-            position: fixed;
-            inset: 0;
-            background: rgba(0, 0, 0, .7);
-            backdrop-filter: blur(4px);
-            z-index: 200;
-            display: flex;
-            align-items: flex-end;
-            justify-content: center;
+            position: fixed; inset: 0; background: rgba(0,0,0,.7);
+            backdrop-filter: blur(4px); z-index: 200;
+            display: flex; align-items: flex-end; justify-content: center;
             animation: fadeIn .2s
         }
-
-        .modal-backdrop.hidden {
-            display: none
-        }
-
+        .modal-backdrop.hidden { display: none }
         .modal {
-            background: var(--surface);
-            border-radius: 20px 20px 0 0;
-            border-top: 1px solid var(--border);
-            padding: 24px 20px;
+            background: var(--surface); border-radius: 20px 20px 0 0;
+            border-top: 1px solid var(--border); padding: 24px 20px;
             padding-bottom: max(24px, env(safe-area-inset-bottom));
-            width: 100%;
-            max-width: 600px;
-            max-height: 92dvh;
-            overflow-y: auto;
-            animation: slideUp .3s ease
+            width: 100%; max-width: 600px; max-height: 92dvh;
+            overflow-y: auto; animation: slideUp .3s ease
         }
-
-        .modal-title {
-            font-size: 18px;
-            font-weight: 700;
-            margin-bottom: 20px
-        }
-
-        .form-field {
-            margin-bottom: 14px
-        }
-
+        .modal-title { font-size: 18px; font-weight: 700; margin-bottom: 20px }
+        .form-field { margin-bottom: 14px }
         .form-label {
-            display: block;
-            font-size: 11px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: .5px;
-            color: var(--muted);
-            margin-bottom: 6px
+            display: block; font-size: 11px; font-weight: 700;
+            text-transform: uppercase; letter-spacing: .5px;
+            color: var(--muted); margin-bottom: 6px
         }
-
-        .form-input,
-        .form-textarea {
-            width: 100%;
-            background: var(--card);
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            color: var(--text);
-            font-family: inherit;
-            font-size: 16px;
-            padding: 11px 14px;
-            outline: none;
-            transition: border-color .2s
+        .form-input, .form-textarea {
+            width: 100%; background: var(--card); border: 1px solid var(--border);
+            border-radius: 10px; color: var(--text); font-family: inherit;
+            font-size: 16px; padding: 11px 14px; outline: none; transition: border-color .2s
         }
-
-        .form-input:focus,
-        .form-textarea:focus {
-            border-color: var(--water)
-        }
-
-        .form-textarea {
-            height: 110px;
-            resize: vertical
-        }
-
-        .coords-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px
-        }
-
-        .modal-hint {
-            font-size: 12px;
-            color: var(--muted);
-            margin-top: 4px
-        }
-
-        .modal-actions {
-            display: flex;
-            gap: 10px;
-            margin-top: 20px
-        }
-
+        .form-input:focus, .form-textarea:focus { border-color: var(--water) }
+        .form-textarea { height: 110px; resize: vertical }
+        .coords-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px }
+        .modal-hint { font-size: 12px; color: var(--muted); margin-top: 4px }
+        .modal-actions { display: flex; gap: 10px; margin-top: 20px }
         .btn-cancel {
-            flex: 1;
-            padding: 13px;
-            background: var(--card);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            color: var(--text);
-            font-family: inherit;
-            font-size: 15px;
-            font-weight: 600;
-            cursor: pointer
+            flex: 1; padding: 13px; background: var(--card);
+            border: 1px solid var(--border); border-radius: var(--radius);
+            color: var(--text); font-family: inherit; font-size: 15px;
+            font-weight: 600; cursor: pointer
         }
-
         .btn-save {
-            flex: 2;
-            padding: 13px;
-            background: var(--water);
-            border: none;
-            border-radius: var(--radius);
-            color: #0f172a;
-            font-family: inherit;
-            font-size: 15px;
-            font-weight: 700;
-            cursor: pointer
+            flex: 2; padding: 13px; background: var(--water); border: none;
+            border-radius: var(--radius); color: #0f172a; font-family: inherit;
+            font-size: 15px; font-weight: 700; cursor: pointer
         }
+        .btn-save:disabled { opacity: .5; cursor: not-allowed }
+        .status-msg { font-size: 12px; color: var(--green); margin-top: 8px; text-align: center }
 
-        .btn-save:disabled {
-            opacity: .5;
-            cursor: not-allowed
+        /* ── Map Editor Overlay ─────────────────────────────────── */
+        #mapEditorOverlay {
+            position: fixed; inset: 0; z-index: 300;
+            background: var(--bg); display: flex; flex-direction: column;
+            animation: fadeIn .2s
         }
+        #mapEditorOverlay.hidden { display: none }
 
-        .status-msg {
-            font-size: 12px;
-            color: var(--green);
-            margin-top: 8px;
-            text-align: center
+        .editor-topbar {
+            display: flex; align-items: center; gap: 10px;
+            padding: 0 12px; height: 54px;
+            background: rgba(15,15,20,.98); border-bottom: 1px solid var(--border);
+            flex-shrink: 0; flex-wrap: wrap
         }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0
-            }
-
-            to {
-                opacity: 1
-            }
+        .editor-plan-name {
+            font-size: 14px; font-weight: 700; flex: 1; min-width: 0;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis
         }
+        .editor-tool-btn {
+            display: flex; align-items: center; gap: 5px; padding: 7px 12px;
+            border: 1px solid var(--border); border-radius: 8px;
+            background: var(--card); color: var(--muted); font-family: inherit;
+            font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;
+            transition: background .15s, color .15s, border-color .15s
+        }
+        .editor-tool-btn:hover { background: var(--hover); color: var(--text) }
+        .editor-tool-btn.active {
+            background: rgba(56,189,248,.15); border-color: var(--water); color: var(--water)
+        }
+        .editor-tool-btn.hose-active {
+            background: rgba(239,68,68,.15); border-color: #ef4444; color: #ef4444
+        }
+        .editor-tool-btn.text-active {
+            background: rgba(74,222,128,.15); border-color: var(--green); color: var(--green)
+        }
+        .btn-editor-save {
+            padding: 8px 16px; background: var(--water); border: none;
+            border-radius: 8px; color: #0f172a; font-family: inherit;
+            font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap;
+            transition: opacity .2s
+        }
+        .btn-editor-save:hover { opacity: .88 }
+        .btn-editor-close {
+            padding: 8px 12px; background: transparent; border: 1px solid var(--border);
+            border-radius: 8px; color: var(--muted); font-family: inherit;
+            font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap
+        }
+        .btn-editor-close:hover { color: var(--text); border-color: rgba(255,255,255,.2) }
 
+        #editorMap { flex: 1; min-height: 0 }
+
+        /* Mode hint bar */
+        #editorHint {
+            position: absolute; bottom: 72px; left: 50%; transform: translateX(-50%);
+            background: rgba(15,15,20,.92); border: 1px solid var(--border);
+            border-radius: 999px; padding: 7px 18px; font-size: 13px; color: var(--muted);
+            z-index: 400; pointer-events: none; white-space: nowrap;
+            transition: opacity .2s
+        }
+        #editorHint.hidden { opacity: 0 }
+
+        /* Object list panel */
+        #objectsPanel {
+            position: absolute; bottom: 0; left: 0; right: 0; z-index: 400;
+            background: rgba(15,15,20,.96); border-top: 1px solid var(--border);
+            max-height: 200px; overflow-y: auto; padding: 8px 12px
+        }
+        .obj-item {
+            display: flex; align-items: center; gap: 8px; padding: 5px 6px;
+            border-radius: 7px; font-size: 12px
+        }
+        .obj-item:hover { background: var(--hover) }
+        .obj-dot {
+            width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0
+        }
+        .obj-label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+        .obj-del {
+            width: 22px; height: 22px; border: none; background: transparent;
+            color: var(--muted); cursor: pointer; border-radius: 4px;
+            display: flex; align-items: center; justify-content: center; font-size: 13px;
+            flex-shrink: 0
+        }
+        .obj-del:hover { color: var(--red); background: rgba(230,57,70,.1) }
+
+        /* Leaflet dark overrides */
+        .leaflet-popup-content-wrapper { background: #1e1e2a; color: #f1f1f5; border: 1px solid rgba(255,255,255,.1) }
+        .leaflet-popup-tip { background: #1e1e2a }
+
+        @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
         @keyframes slideUp {
-            from {
-                transform: translateY(30px);
-                opacity: 0
-            }
-
-            to {
-                transform: translateY(0);
-                opacity: 1
-            }
+            from { transform: translateY(30px); opacity: 0 }
+            to   { transform: translateY(0); opacity: 1 }
         }
     </style>
 </head>
 
 <body>
 
-    <header class="topbar">
-        <div class="topbar__left">
-            <span style="font-size:22px">💧</span>
-            <span class="topbar__title">WasserTransportPläne</span>
-        </div>
-        <a href="/admin/" class="topbar__back">← Admin</a>
-    </header>
+<header class="topbar">
+    <div class="topbar__left">
+        <span style="font-size:22px">💧</span>
+        <span class="topbar__title">WasserTransportPläne</span>
+    </div>
+    <a href="/admin/" class="topbar__back">← Admin</a>
+</header>
 
-    <div class="container">
-        <div class="toolbar">
-            <span class="toolbar__title" id="deptLabel">Lade…</span>
-            <button class="btn-primary" id="btnNew">＋ Neuer Plan</button>
-        </div>
-        <div id="plansList">
-            <div class="empty">
-                <div class="empty-icon">⏳</div>
-                <p>Lade Pläne…</p>
-            </div>
+<div class="container">
+    <div class="toolbar">
+        <span class="toolbar__title" id="deptLabel">Lade…</span>
+        <button class="btn-primary" id="btnNew">＋ Neuer Plan</button>
+    </div>
+    <div id="plansList">
+        <div class="empty">
+            <div class="empty-icon">⏳</div>
+            <p>Lade Pläne…</p>
         </div>
     </div>
+</div>
 
-    <!-- Modal -->
-    <div class="modal-backdrop hidden" id="modalBackdrop">
-        <div class="modal">
-            <div class="modal-title" id="modalTitle">Neuer WasserTransportPlan</div>
-            <input type="hidden" id="editId" />
-            <div class="form-field">
-                <label class="form-label" for="fName">Plan-Name *</label>
-                <input class="form-input" type="text" id="fName" placeholder="z.B. WTP Industriestrasse" />
-            </div>
-            <div class="form-field">
-                <label class="form-label" for="fDesc">Beschreibung / Notizen</label>
-                <textarea class="form-textarea" id="fDesc"
-                    placeholder="Routenführung, Tankstellen, Besonderheiten…"></textarea>
-            </div>
-            <div class="form-field">
-                <label class="form-label">Koordinaten (Kartenmarker)</label>
-                <div class="coords-row">
-                    <input class="form-input" type="number" id="fLat" placeholder="Breitengrad" step="any" />
-                    <input class="form-input" type="number" id="fLng" placeholder="Längengrad" step="any" />
-                </div>
-                <div class="modal-hint">Tipp: In der Karte auf 🔥 Brandposition setzen und Koordinaten aus der URL
-                    kopieren.</div>
-            </div>
-            <div class="modal-actions">
-                <button class="btn-cancel" id="btnCancel">Abbrechen</button>
-                <button class="btn-save" id="btnSave">Speichern</button>
-            </div>
-            <div class="status-msg hidden" id="statusMsg"></div>
+<!-- Plan-Modal -->
+<div class="modal-backdrop hidden" id="modalBackdrop">
+    <div class="modal">
+        <div class="modal-title" id="modalTitle">Neuer WasserTransportPlan</div>
+        <input type="hidden" id="editId" />
+        <div class="form-field">
+            <label class="form-label" for="fName">Plan-Name *</label>
+            <input class="form-input" type="text" id="fName" placeholder="z.B. WTP Industriestrasse" />
         </div>
+        <div class="form-field">
+            <label class="form-label" for="fDesc">Beschreibung / Notizen</label>
+            <textarea class="form-textarea" id="fDesc"
+                placeholder="Routenführung, Tankstellen, Besonderheiten…"></textarea>
+        </div>
+        <div class="form-field">
+            <label class="form-label">Koordinaten (Kartenmarker)</label>
+            <div class="coords-row">
+                <input class="form-input" type="number" id="fLat" placeholder="Breitengrad" step="any" />
+                <input class="form-input" type="number" id="fLng" placeholder="Längengrad" step="any" />
+            </div>
+            <div class="modal-hint">Tipp: In der Karte auf 🔥 Brandposition setzen und Koordinaten aus der URL kopieren.</div>
+        </div>
+        <div class="modal-actions">
+            <button class="btn-cancel" id="btnCancel">Abbrechen</button>
+            <button class="btn-save" id="btnSave">Speichern</button>
+        </div>
+        <div class="status-msg hidden" id="statusMsg"></div>
     </div>
+</div>
 
-    <!-- Hidden file input -->
-    <input type="file" id="fileInput" style="display:none" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx" />
+<!-- Hidden file input -->
+<input type="file" id="fileInput" style="display:none"
+    accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx" />
 
-    <script>
-        'use strict';
-        const token = localStorage.getItem('hw_token');
+<!-- ── Map Editor Overlay ──────────────────────────────────────────────── -->
+<div id="mapEditorOverlay" class="hidden">
+    <div class="editor-topbar" id="editorTopbar">
+        <span class="editor-plan-name" id="editorPlanName">Plan bearbeiten</span>
 
-        function clearAuth() {
-            localStorage.removeItem('hw_token');
-            localStorage.removeItem('hw_dept_name');
-            localStorage.removeItem('hw_expires');
-            window.location.href = '/login.php';
-        }
+        <button class="editor-tool-btn" id="toolTLF" data-tool="TLF">🚒 TLF</button>
+        <button class="editor-tool-btn" id="toolMotorspritze" data-tool="Motorspritze">🚒 Motorspritze</button>
+        <button class="editor-tool-btn" id="toolHose" data-tool="hose">🔴 Schlauch</button>
+        <button class="editor-tool-btn" id="toolText" data-tool="text">🔤 Text</button>
+        <button class="editor-tool-btn" id="toolDelete" data-tool="delete">🗑️ Löschen</button>
 
-        if (!token || Date.now() > parseInt(localStorage.getItem('hw_expires') || 0, 10)) clearAuth();
+        <button class="btn-editor-save" id="btnEditorSave">💾 Speichern</button>
+        <button class="btn-editor-close" id="btnEditorClose">✕ Schließen</button>
+    </div>
+    <div style="position:relative;flex:1;min-height:0;display:flex;flex-direction:column">
+        <div id="editorMap"></div>
+        <div id="editorHint" class="hidden"></div>
+        <div id="objectsPanel"></div>
+    </div>
+</div>
 
-        // ── Cached DOM refs ──────────────────────────────────────────────────────────
-        const $deptLabel = document.getElementById('deptLabel');
-        const $plansList = document.getElementById('plansList');
-        const $modalBackdrop = document.getElementById('modalBackdrop');
-        const $modalTitle = document.getElementById('modalTitle');
-        const $editId = document.getElementById('editId');
-        const $fName = document.getElementById('fName');
-        const $fDesc = document.getElementById('fDesc');
-        const $fLat = document.getElementById('fLat');
-        const $fLng = document.getElementById('fLng');
-        const $btnSave = document.getElementById('btnSave');
-        const $statusMsg = document.getElementById('statusMsg');
-        const $fileInput = document.getElementById('fileInput');
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+'use strict';
+const token = localStorage.getItem('hw_token');
+function clearAuth() {
+    localStorage.removeItem('hw_token');
+    localStorage.removeItem('hw_dept_name');
+    localStorage.removeItem('hw_expires');
+    window.location.href = '/login.php';
+}
+if (!token || Date.now() > parseInt(localStorage.getItem('hw_expires') || 0, 10)) clearAuth();
 
-        $deptLabel.textContent = (localStorage.getItem('hw_dept_name') || 'Feuerwehr') + ' – WTP';
+// ── DOM refs ──────────────────────────────────────────────────────────────────
+const $deptLabel      = document.getElementById('deptLabel');
+const $plansList      = document.getElementById('plansList');
+const $modalBackdrop  = document.getElementById('modalBackdrop');
+const $modalTitle     = document.getElementById('modalTitle');
+const $editId         = document.getElementById('editId');
+const $fName          = document.getElementById('fName');
+const $fDesc          = document.getElementById('fDesc');
+const $fLat           = document.getElementById('fLat');
+const $fLng           = document.getElementById('fLng');
+const $btnSave        = document.getElementById('btnSave');
+const $statusMsg      = document.getElementById('statusMsg');
+const $fileInput      = document.getElementById('fileInput');
 
-        // ── API-Helper ──────────────────────────────────────────────────────────────
-        async function api(action, id, body, planId) {
-            let url = `/admin/wtp_api.php?action=${encodeURIComponent(action)}`;
-            if (id) url += `&id=${encodeURIComponent(id)}`;
-            if (planId) url += `&plan_id=${encodeURIComponent(planId)}`;
-            try {
-                const res = await fetch(url, {
-                    method: body ? 'POST' : 'GET',
-                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                    body: body ? JSON.stringify(body) : undefined,
-                });
-                if (res.status === 401) clearAuth();
-                const data = await res.json();
-                if (data.error) { alert('Fehler: ' + data.error); return null; }
-                return data;
-            } catch {
-                alert('Netzwerkfehler – bitte erneut versuchen.');
-                return null;
-            }
-        }
+$deptLabel.textContent = (localStorage.getItem('hw_dept_name') || 'Feuerwehr') + ' – WTP';
 
-        async function uploadFile(planId, file) {
-            const fd = new FormData();
-            fd.append('file', file);
-            try {
-                const res = await fetch(`/admin/wtp_api.php?action=upload&plan_id=${encodeURIComponent(planId)}`, {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${token}` },
-                    body: fd,
-                });
-                if (res.status === 401) clearAuth();
-                return res.json();
-            } catch {
-                alert('Upload fehlgeschlagen – bitte erneut versuchen.');
-                return { error: 'Netzwerkfehler' };
-            }
-        }
+// ── API-Helper ────────────────────────────────────────────────────────────────
+async function api(action, id, body, planId) {
+    let url = `/admin/wtp_api.php?action=${encodeURIComponent(action)}`;
+    if (id)     url += `&id=${encodeURIComponent(id)}`;
+    if (planId) url += `&plan_id=${encodeURIComponent(planId)}`;
+    try {
+        const res = await fetch(url, {
+            method: body ? 'POST' : 'GET',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: body ? JSON.stringify(body) : undefined,
+        });
+        if (res.status === 401) clearAuth();
+        const data = await res.json();
+        if (data.error) { alert('Fehler: ' + data.error); return null; }
+        return data;
+    } catch {
+        alert('Netzwerkfehler – bitte erneut versuchen.');
+        return null;
+    }
+}
 
-        async function loadFiles(planId) {
-            try {
-                const res = await fetch(`/admin/wtp_api.php?action=files&plan_id=${encodeURIComponent(planId)}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                return res.json();
-            } catch {
-                return [];
-            }
-        }
+async function uploadFile(planId, file) {
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+        const res = await fetch(`/admin/wtp_api.php?action=upload&plan_id=${encodeURIComponent(planId)}`, {
+            method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: fd,
+        });
+        if (res.status === 401) clearAuth();
+        return res.json();
+    } catch {
+        alert('Upload fehlgeschlagen.'); return { error: 'Netzwerkfehler' };
+    }
+}
 
-        // ── Icons ───────────────────────────────────────────────────────────────────
-        function fileIcon(mime) {
-            if (mime?.includes('pdf')) return '📄';
-            if (mime?.includes('image')) return '🖼️';
-            if (mime?.includes('word')) return '📝';
-            if (mime?.includes('sheet') || mime?.includes('excel')) return '📊';
-            return '📎';
-        }
-        function formatSize(bytes) {
-            if (bytes > 1048576) return (bytes / 1048576).toFixed(1) + ' MB';
-            return Math.round(bytes / 1024) + ' KB';
-        }
+async function loadFiles(planId) {
+    try {
+        const res = await fetch(`/admin/wtp_api.php?action=files&plan_id=${encodeURIComponent(planId)}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        return res.json();
+    } catch { return []; }
+}
 
-        // ── State ───────────────────────────────────────────────────────────────────
-        let allPlans = [];
-        let openPlanId = null;
+function fileIcon(mime) {
+    if (mime?.includes('pdf'))   return '📄';
+    if (mime?.includes('image')) return '🖼️';
+    if (mime?.includes('word'))  return '📝';
+    if (mime?.includes('sheet') || mime?.includes('excel')) return '📊';
+    return '📎';
+}
+function formatSize(bytes) {
+    if (bytes > 1048576) return (bytes / 1048576).toFixed(1) + ' MB';
+    return Math.round(bytes / 1024) + ' KB';
+}
+function esc(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
 
-        // ── Pläne laden ─────────────────────────────────────────────────────────────
-        async function loadPlans() {
-            const data = await api('list');
-            allPlans = Array.isArray(data) ? data : [];
-            renderPlans();
-        }
+// ── State ─────────────────────────────────────────────────────────────────────
+let allPlans = [];
+let openPlanId = null;
 
-        function renderPlans() {
-            if (allPlans.length === 0) {
-                $plansList.innerHTML = `<div class="empty"><div class="empty-icon">💧</div><p>Noch keine WasserTransportPläne.</p></div>`;
-                return;
-            }
-            $plansList.innerHTML = allPlans.map(p => `
-    <div class="plan-card" data-id="${p.id}">
-      <div class="plan-header" data-action="toggle" data-id="${p.id}">
-        <div class="plan-icon">💧</div>
-        <div class="plan-meta">
-          <div class="plan-name">${esc(p.name)}</div>
-          <div class="plan-coords">${p.lat && p.lng ? p.lat + ', ' + p.lng : 'Keine Koordinaten'} · ${p.file_count} Datei(en)</div>
-        </div>
-        <div class="plan-actions">
-          <button class="icon-btn" title="Bearbeiten" data-action="edit" data-id="${p.id}">✏️</button>
-          <button class="icon-btn del" title="Löschen" data-action="delete-plan" data-id="${p.id}">🗑️</button>
-        </div>
+async function loadPlans() {
+    const data = await api('list');
+    allPlans = Array.isArray(data) ? data : [];
+    renderPlans();
+}
+
+function renderPlans() {
+    if (allPlans.length === 0) {
+        $plansList.innerHTML = `<div class="empty"><div class="empty-icon">💧</div><p>Noch keine WasserTransportPläne.</p></div>`;
+        return;
+    }
+    $plansList.innerHTML = allPlans.map(p => `
+<div class="plan-card" data-id="${p.id}">
+  <div class="plan-header" data-action="toggle" data-id="${p.id}">
+    <div class="plan-icon">💧</div>
+    <div class="plan-meta">
+      <div class="plan-name">${esc(p.name)}</div>
+      <div class="plan-coords">${p.lat && p.lng ? p.lat + ', ' + p.lng : 'Keine Koordinaten'} · ${p.file_count} Datei(en)</div>
+    </div>
+    <div class="plan-actions">
+      <button class="icon-btn" title="Bearbeiten" data-action="edit" data-id="${p.id}">✏️</button>
+      <button class="icon-btn del" title="Löschen" data-action="delete-plan" data-id="${p.id}">🗑️</button>
+    </div>
+  </div>
+  <div class="plan-detail" id="detail-${p.id}">
+    <p class="plan-desc">${esc(p.description || 'Keine Beschreibung.')}</p>
+    <button class="btn-map-edit" data-action="open-map-editor" data-id="${p.id}">🗺️ Kartenobjekte bearbeiten</button>
+    <div class="files-section">
+      <label class="upload-label" data-action="upload" data-plan-id="${p.id}">
+        📎 Datei hochladen (PDF, Bild, Word, Excel – max. 20 MB)
+      </label>
+      <div class="file-list" id="files-${p.id}">
+        <p style="font-size:13px;color:var(--muted)">Lade Dateien…</p>
       </div>
-      <div class="plan-detail" id="detail-${p.id}">
-        <p class="plan-desc">${esc(p.description || 'Keine Beschreibung.')}</p>
-        <div class="files-section">
-          <label class="upload-label" data-action="upload" data-plan-id="${p.id}">
-            📎 Datei hochladen (PDF, Bild, Word, Excel – max. 20 MB)
-          </label>
-          <div class="file-list" id="files-${p.id}">
-            <p style="font-size:13px;color:var(--muted)">Lade Dateien…</p>
-          </div>
-        </div>
-      </div>
     </div>
-  `).join('');
+  </div>
+</div>
+`).join('');
+}
+
+// ── Event delegation ──────────────────────────────────────────────────────────
+let uploadTargetPlanId = null;
+
+$plansList.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const action = btn.dataset.action;
+    const id = +btn.dataset.id;
+
+    if (action === 'edit')            { e.stopPropagation(); openEdit(id); }
+    else if (action === 'delete-plan') { e.stopPropagation(); deletePlan(id); }
+    else if (action === 'toggle')      { toggleDetail(id); }
+    else if (action === 'upload')      { uploadTargetPlanId = +btn.dataset.planId; $fileInput.click(); }
+    else if (action === 'view-file')   { viewFile(+btn.dataset.fileId); }
+    else if (action === 'delete-file') { deleteFile(+btn.dataset.fileId, +btn.dataset.planId); }
+    else if (action === 'open-map-editor') { e.stopPropagation(); openMapEditor(id); }
+});
+
+async function toggleDetail(planId) {
+    const el = document.getElementById(`detail-${planId}`);
+    const isOpen = el.classList.toggle('open');
+    if (isOpen && planId !== openPlanId) {
+        openPlanId = planId;
+        await refreshFileList(planId);
+    }
+}
+
+async function refreshFileList(planId) {
+    const filesEl = document.getElementById(`files-${planId}`);
+    if (!filesEl) return;
+    const files = await loadFiles(planId);
+    if (!Array.isArray(files) || files.length === 0) {
+        filesEl.innerHTML = '<p style="font-size:13px;color:var(--muted)">Noch keine Dateien.</p>';
+        return;
+    }
+    filesEl.innerHTML = files.map(f => `
+<div class="file-item">
+  <span class="file-icon">${fileIcon(f.mime_type)}</span>
+  <span class="file-name" title="${esc(f.original_name)}">${esc(f.original_name)}</span>
+  <span class="file-size">${formatSize(f.file_size)}</span>
+  <button class="file-btn view" data-action="view-file" data-file-id="${f.id}">Öffnen</button>
+  <button class="file-btn del"  data-action="delete-file" data-file-id="${f.id}" data-plan-id="${planId}">✕</button>
+</div>
+`).join('');
+}
+
+$fileInput.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file || !uploadTargetPlanId) return;
+    e.target.value = '';
+    const targetId = uploadTargetPlanId;
+    const filesEl = document.getElementById(`files-${targetId}`);
+    if (filesEl) filesEl.innerHTML = '<p style="font-size:13px;color:var(--muted)">Uploading…</p>';
+    const result = await uploadFile(targetId, file);
+    if (result.error) { alert('Fehler: ' + result.error); }
+    await Promise.all([refreshFileList(targetId), loadPlans()]);
+});
+
+function viewFile(fileId) {
+    window.open(`/admin/wtp_api.php?action=download&file_id=${encodeURIComponent(fileId)}&token=${encodeURIComponent(token)}`, '_blank');
+}
+async function deleteFile(fileId, planId) {
+    if (!confirm('Datei unwiderruflich löschen?')) return;
+    const result = await api('file_delete', fileId);
+    if (result) await Promise.all([refreshFileList(planId), loadPlans()]);
+}
+async function deletePlan(id) {
+    const p = allPlans.find(x => x.id == id);
+    if (!confirm(`Plan "${p?.name}" und alle Dateien löschen?`)) return;
+    const result = await api('delete', id);
+    if (result) await loadPlans();
+}
+
+// ── Plan Modal ────────────────────────────────────────────────────────────────
+function openModal(plan = null) {
+    $modalTitle.textContent = plan ? 'Plan bearbeiten' : 'Neuer WasserTransportPlan';
+    $editId.value = plan?.id || '';
+    $fName.value  = plan?.name || '';
+    $fDesc.value  = plan?.description || '';
+    $fLat.value   = plan?.lat || '';
+    $fLng.value   = plan?.lng || '';
+    $statusMsg.classList.add('hidden');
+    $modalBackdrop.classList.remove('hidden');
+    $fName.focus();
+}
+function closeModal() { $modalBackdrop.classList.add('hidden'); }
+function openEdit(id)  { openModal(allPlans.find(p => p.id == id)); }
+
+document.getElementById('btnNew').addEventListener('click', () => openModal());
+document.getElementById('btnCancel').addEventListener('click', closeModal);
+$modalBackdrop.addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
+
+$btnSave.addEventListener('click', async () => {
+    const id   = $editId.value;
+    const name = $fName.value.trim();
+    if (!name) { alert('Plan-Name erforderlich.'); return; }
+    $btnSave.disabled = true; $btnSave.textContent = 'Speichern…';
+    const result = await api(id ? 'update' : 'create', id || null, {
+        name,
+        description: $fDesc.value.trim(),
+        lat: parseFloat($fLat.value) || null,
+        lng: parseFloat($fLng.value) || null,
+    });
+    if (result) { closeModal(); await loadPlans(); }
+    $btnSave.disabled = false; $btnSave.textContent = 'Speichern';
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MAP EDITOR
+// ─────────────────────────────────────────────────────────────────────────────
+
+let editorMap       = null;
+let editorPlanId    = null;
+let activeTool      = null;   // 'TLF' | 'Motorspritze' | 'hose' | 'text' | 'delete' | null
+
+// In-memory objects for this edit session
+let edObjects = [];  // { id, type, name, lat, lng, marker }
+let edHoses   = [];  // { id, coords: [[lat,lng],...], layer, tempMarkers }
+let edTexts   = [];  // { id, label, lat, lng, marker }
+
+// Hose drawing state
+let hoseDrawing     = false;
+let hosePoints      = [];   // [[lat,lng],...]
+let hoseTempLayer   = null; // L.polyline being drawn
+let hoseTempMarkers = [];   // L.circleMarker at each point
+
+let editorIdSeq = 0;
+function nextId() { return ++editorIdSeq; }
+
+const $overlay    = document.getElementById('mapEditorOverlay');
+const $edPlanName = document.getElementById('editorPlanName');
+const $hint       = document.getElementById('editorHint');
+const $objPanel   = document.getElementById('objectsPanel');
+
+const TOOL_BTNS = {
+    TLF:          document.getElementById('toolTLF'),
+    Motorspritze: document.getElementById('toolMotorspritze'),
+    hose:         document.getElementById('toolHose'),
+    text:         document.getElementById('toolText'),
+    delete:       document.getElementById('toolDelete'),
+};
+
+function setActiveTool(tool) {
+    activeTool = activeTool === tool ? null : tool;
+
+    // finish any ongoing hose drawing if switching away
+    if (activeTool !== 'hose' && hoseDrawing) finishHose(false);
+
+    Object.entries(TOOL_BTNS).forEach(([t, btn]) => {
+        btn.classList.remove('active', 'hose-active', 'text-active');
+        if (t === activeTool) {
+            if (t === 'hose')   btn.classList.add('hose-active');
+            else if (t === 'text') btn.classList.add('text-active');
+            else                btn.classList.add('active');
         }
+    });
 
-        function esc(s) {
-            return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const hints = {
+        TLF:          'Auf die Karte klicken, um ein TLF zu platzieren',
+        Motorspritze: 'Auf die Karte klicken, um eine Motorspritze zu platzieren',
+        hose:         'Klicken zum Zeichnen · Doppelklick zum Beenden',
+        text:         'Auf die Karte klicken, um einen Text zu platzieren',
+        delete:       'Auf ein Objekt klicken, um es zu löschen',
+    };
+    if (activeTool && hints[activeTool]) {
+        $hint.textContent = hints[activeTool];
+        $hint.classList.remove('hidden');
+    } else {
+        $hint.classList.add('hidden');
+    }
+
+    editorMap.getContainer().style.cursor = activeTool ? 'crosshair' : '';
+}
+
+Object.entries(TOOL_BTNS).forEach(([tool, btn]) => {
+    btn.addEventListener('click', () => setActiveTool(tool));
+});
+
+// ── Open editor ───────────────────────────────────────────────────────────────
+async function openMapEditor(planId) {
+    editorPlanId = planId;
+    const plan   = allPlans.find(p => p.id == planId);
+    $edPlanName.textContent = plan ? plan.name : 'Plan bearbeiten';
+
+    $overlay.classList.remove('hidden');
+
+    // Init map once
+    if (!editorMap) {
+        editorMap = L.map('editorMap', { zoomControl: true });
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap'
+        }).addTo(editorMap);
+        editorMap.on('click', onMapClick);
+        editorMap.on('dblclick', onMapDblClick);
+    }
+
+    // Center on plan coords or default
+    const lat = parseFloat(plan?.lat) || 47.0;
+    const lng = parseFloat(plan?.lng) || 8.3;
+    editorMap.setView([lat, lng], 15);
+    setTimeout(() => editorMap.invalidateSize(), 100);
+
+    // Load existing objects
+    await loadEditorObjects(planId);
+    renderObjectPanel();
+}
+
+async function loadEditorObjects(planId) {
+    clearEditorObjects();
+    const data = await api('map_objects', null, null, planId);
+    if (!data) return;
+
+    (data.objects || []).forEach(o => {
+        const marker = createVehicleMarker(o.type, o.name, [o.lat, o.lng]);
+        edObjects.push({ id: nextId(), type: o.type, name: o.name, lat: o.lat, lng: o.lng, marker });
+    });
+
+    (data.hoses || []).forEach(h => {
+        if (!h.coordinates?.length) return;
+        const layer = L.polyline(h.coordinates, { color: '#ef4444', weight: 4, opacity: 0.85 }).addTo(editorMap);
+        edHoses.push({ id: nextId(), coords: h.coordinates, layer });
+    });
+
+    (data.texts || []).forEach(t => {
+        const marker = createTextMarker(t.label, [t.lat, t.lng]);
+        edTexts.push({ id: nextId(), label: t.label, lat: t.lat, lng: t.lng, marker });
+    });
+}
+
+function clearEditorObjects() {
+    edObjects.forEach(o => editorMap?.removeLayer(o.marker));
+    edHoses.forEach(h => {
+        editorMap?.removeLayer(h.layer);
+        (h.tempMarkers || []).forEach(m => editorMap?.removeLayer(m));
+    });
+    edTexts.forEach(t => editorMap?.removeLayer(t.marker));
+    edObjects = []; edHoses = []; edTexts = [];
+}
+
+// ── Map click handler ─────────────────────────────────────────────────────────
+function onMapClick(e) {
+    if (!activeTool) return;
+    const { lat, lng } = e.latlng;
+
+    if (activeTool === 'TLF' || activeTool === 'Motorspritze') {
+        const name = prompt(`Name für ${activeTool}:`, activeTool);
+        if (name === null) return;  // cancelled
+        const finalName = name.trim() || activeTool;
+        const marker = createVehicleMarker(activeTool, finalName, [lat, lng]);
+        edObjects.push({ id: nextId(), type: activeTool, name: finalName, lat, lng, marker });
+        renderObjectPanel();
+    }
+
+    if (activeTool === 'hose') {
+        if (!hoseDrawing) {
+            hoseDrawing = true;
+            hosePoints  = [[lat, lng]];
+            hoseTempLayer = L.polyline([[lat, lng]], { color: '#ef4444', weight: 4, opacity: 0.85, dashArray: '8 4' }).addTo(editorMap);
+            hoseTempMarkers = [L.circleMarker([lat, lng], { radius: 5, color: '#ef4444', fillColor: '#ef4444', fillOpacity: 1 }).addTo(editorMap)];
+        } else {
+            hosePoints.push([lat, lng]);
+            hoseTempLayer.setLatLngs(hosePoints);
+            hoseTempMarkers.push(L.circleMarker([lat, lng], { radius: 5, color: '#ef4444', fillColor: '#ef4444', fillOpacity: 1 }).addTo(editorMap));
         }
+    }
 
-        // ── Event Delegation ────────────────────────────────────────────────────────
-        let uploadTargetPlanId = null;
+    if (activeTool === 'text') {
+        const label = prompt('Text:');
+        if (!label?.trim()) return;
+        const marker = createTextMarker(label.trim(), [lat, lng]);
+        edTexts.push({ id: nextId(), label: label.trim(), lat, lng, marker });
+        renderObjectPanel();
+    }
+}
 
-        $plansList.addEventListener('click', (e) => {
-            const btn = e.target.closest('[data-action]');
-            if (!btn) return;
-            const action = btn.dataset.action;
-            const id = +btn.dataset.id;
+function onMapDblClick(e) {
+    if (activeTool === 'hose' && hoseDrawing) {
+        e.originalEvent.preventDefault();
+        finishHose(true);
+    }
+}
 
-            if (action === 'edit') { e.stopPropagation(); openEdit(id); }
-            else if (action === 'delete-plan') { e.stopPropagation(); deletePlan(id); }
-            else if (action === 'toggle') toggleDetail(id);
-            else if (action === 'upload') { uploadTargetPlanId = +btn.dataset.planId; $fileInput.click(); }
-            else if (action === 'view-file') viewFile(+btn.dataset.fileId);
-            else if (action === 'delete-file') deleteFile(+btn.dataset.fileId, +btn.dataset.planId);
-        });
+function finishHose(commit) {
+    hoseDrawing = false;
+    if (hoseTempLayer) { editorMap.removeLayer(hoseTempLayer); hoseTempLayer = null; }
+    hoseTempMarkers.forEach(m => editorMap.removeLayer(m));
+    hoseTempMarkers = [];
 
-        // ── Detail auf-/zuklappen ───────────────────────────────────────────────────
-        async function toggleDetail(planId) {
-            const el = document.getElementById(`detail-${planId}`);
-            const isOpen = el.classList.toggle('open');
-            if (isOpen && planId !== openPlanId) {
-                openPlanId = planId;
-                await refreshFileList(planId);
-            }
-        }
+    if (commit && hosePoints.length >= 2) {
+        const layer = L.polyline(hosePoints, { color: '#ef4444', weight: 4, opacity: 0.85 }).addTo(editorMap);
+        edHoses.push({ id: nextId(), coords: [...hosePoints], layer });
+        renderObjectPanel();
+    }
+    hosePoints = [];
+}
 
-        async function refreshFileList(planId) {
-            const filesEl = document.getElementById(`files-${planId}`);
-            if (!filesEl) return;
-            const files = await loadFiles(planId);
+// ── Marker factories ──────────────────────────────────────────────────────────
+function createVehicleMarker(type, name, latlng) {
+    const emoji = type === 'TLF' ? '🚒' : '🚛';
+    const color  = type === 'TLF' ? '#38bdf8' : '#f97316';
+    const icon = L.divIcon({
+        className: '',
+        html: `<div style="
+            background:rgba(0,0,0,.75);border:2px solid ${color};
+            border-radius:8px;padding:3px 7px;font-size:13px;
+            color:#fff;white-space:nowrap;pointer-events:none;
+            box-shadow:0 2px 8px rgba(0,0,0,.6);
+        ">${emoji} ${escHtml(name)}</div>`,
+        iconAnchor: [0, 0],
+        popupAnchor: [0, -10],
+    });
+    const marker = L.marker(latlng, { icon, draggable: true }).addTo(editorMap);
+    marker.on('click', (ev) => {
+        if (activeTool !== 'delete') return;
+        L.DomEvent.stopPropagation(ev);
+        removeObject('vehicle', marker);
+    });
+    marker.on('dragend', () => {
+        const obj = edObjects.find(o => o.marker === marker);
+        if (obj) { const p = marker.getLatLng(); obj.lat = p.lat; obj.lng = p.lng; }
+    });
+    return marker;
+}
 
-            if (!Array.isArray(files) || files.length === 0) {
-                filesEl.innerHTML = '<p style="font-size:13px;color:var(--muted)">Noch keine Dateien.</p>';
-                return;
-            }
-            filesEl.innerHTML = files.map(f => `
-    <div class="file-item">
-      <span class="file-icon">${fileIcon(f.mime_type)}</span>
-      <span class="file-name" title="${esc(f.original_name)}">${esc(f.original_name)}</span>
-      <span class="file-size">${formatSize(f.file_size)}</span>
-      <button class="file-btn view" data-action="view-file" data-file-id="${f.id}">Öffnen</button>
-      <button class="file-btn del" data-action="delete-file" data-file-id="${f.id}" data-plan-id="${planId}">✕</button>
-    </div>
-  `).join('');
-        }
+function createTextMarker(label, latlng) {
+    const icon = L.divIcon({
+        className: '',
+        html: `<div style="
+            background:rgba(0,0,0,.75);border:1px solid rgba(74,222,128,.6);
+            border-radius:6px;padding:3px 8px;font-size:12px;
+            color:#4ade80;white-space:nowrap;pointer-events:none;
+            box-shadow:0 2px 8px rgba(0,0,0,.6);
+        ">${escHtml(label)}</div>`,
+        iconAnchor: [0, 0],
+    });
+    const marker = L.marker(latlng, { icon, draggable: true }).addTo(editorMap);
+    marker.on('click', (ev) => {
+        if (activeTool !== 'delete') return;
+        L.DomEvent.stopPropagation(ev);
+        removeObject('text', marker);
+    });
+    marker.on('dragend', () => {
+        const t = edTexts.find(x => x.marker === marker);
+        if (t) { const p = marker.getLatLng(); t.lat = p.lat; t.lng = p.lng; }
+    });
+    return marker;
+}
 
-        // ── Datei-Upload ────────────────────────────────────────────────────────────
-        $fileInput.addEventListener('change', async (e) => {
-            const file = e.target.files[0];
-            if (!file || !uploadTargetPlanId) return;
-            e.target.value = '';
+function removeObject(kind, markerOrId) {
+    if (kind === 'vehicle') {
+        const idx = edObjects.findIndex(o => o.marker === markerOrId || o.id === markerOrId);
+        if (idx !== -1) { editorMap.removeLayer(edObjects[idx].marker); edObjects.splice(idx, 1); }
+    } else if (kind === 'hose') {
+        const idx = edHoses.findIndex(h => h.id === markerOrId);
+        if (idx !== -1) { editorMap.removeLayer(edHoses[idx].layer); edHoses.splice(idx, 1); }
+    } else if (kind === 'text') {
+        const idx = edTexts.findIndex(t => t.marker === markerOrId || t.id === markerOrId);
+        if (idx !== -1) { editorMap.removeLayer(edTexts[idx].marker); edTexts.splice(idx, 1); }
+    }
+    renderObjectPanel();
+}
 
-            const targetId = uploadTargetPlanId;
-            const filesEl = document.getElementById(`files-${targetId}`);
-            if (filesEl) filesEl.innerHTML = '<p style="font-size:13px;color:var(--muted)">Uploading…</p>';
+// ── Objects Panel ─────────────────────────────────────────────────────────────
+function renderObjectPanel() {
+    const items = [];
 
-            const result = await uploadFile(targetId, file);
-            if (result.error) { alert('Fehler: ' + result.error); }
-            // Refresh file list and update file count in parallel
-            await Promise.all([refreshFileList(targetId), loadPlans()]);
-        });
+    edObjects.forEach(o => {
+        const color = o.type === 'TLF' ? '#38bdf8' : '#f97316';
+        items.push(`<div class="obj-item">
+            <div class="obj-dot" style="background:${color}"></div>
+            <span class="obj-label">🚒 ${esc(o.name)}</span>
+            <button class="obj-del" data-kind="vehicle" data-id="${o.id}">✕</button>
+        </div>`);
+    });
 
-        // ── Datei öffnen / löschen ──────────────────────────────────────────────────
-        function viewFile(fileId) {
-            window.open(`/admin/wtp_api.php?action=download&file_id=${encodeURIComponent(fileId)}&token=${encodeURIComponent(token)}`, '_blank');
-        }
+    edHoses.forEach((h, i) => {
+        items.push(`<div class="obj-item">
+            <div class="obj-dot" style="background:#ef4444"></div>
+            <span class="obj-label">🔴 Schlauchleitung ${i + 1} (${h.coords.length} Punkte)</span>
+            <button class="obj-del" data-kind="hose" data-id="${h.id}">✕</button>
+        </div>`);
+    });
 
-        async function deleteFile(fileId, planId) {
-            if (!confirm('Datei unwiderruflich löschen?')) return;
-            const result = await api('file_delete', fileId);
-            if (result) await Promise.all([refreshFileList(planId), loadPlans()]);
-        }
+    edTexts.forEach(t => {
+        items.push(`<div class="obj-item">
+            <div class="obj-dot" style="background:#4ade80"></div>
+            <span class="obj-label">🔤 ${esc(t.label)}</span>
+            <button class="obj-del" data-kind="text" data-id="${t.id}">✕</button>
+        </div>`);
+    });
 
-        // ── Plan löschen ────────────────────────────────────────────────────────────
-        async function deletePlan(id) {
-            const p = allPlans.find(x => x.id == id);
-            if (!confirm(`Plan "${p?.name}" und alle Dateien löschen?`)) return;
-            const result = await api('delete', id);
-            if (result) await loadPlans();
-        }
+    $objPanel.innerHTML = items.length
+        ? items.join('')
+        : '<p style="font-size:12px;color:var(--muted);padding:4px 0">Noch keine Objekte platziert.</p>';
+}
 
-        // ── Modal ────────────────────────────────────────────────────────────────────
-        function openModal(plan = null) {
-            $modalTitle.textContent = plan ? 'Plan bearbeiten' : 'Neuer WasserTransportPlan';
-            $editId.value = plan?.id || '';
-            $fName.value = plan?.name || '';
-            $fDesc.value = plan?.description || '';
-            $fLat.value = plan?.lat || '';
-            $fLng.value = plan?.lng || '';
-            $statusMsg.classList.add('hidden');
-            $modalBackdrop.classList.remove('hidden');
-            $fName.focus();
-        }
-        function closeModal() { $modalBackdrop.classList.add('hidden'); }
+$objPanel.addEventListener('click', (e) => {
+    const btn = e.target.closest('.obj-del');
+    if (!btn) return;
+    removeObject(btn.dataset.kind, +btn.dataset.id);
+});
 
-        function openEdit(id) { openModal(allPlans.find(p => p.id == id)); }
-        document.getElementById('btnNew').addEventListener('click', () => openModal());
-        document.getElementById('btnCancel').addEventListener('click', closeModal);
-        $modalBackdrop.addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
+// ── Save ──────────────────────────────────────────────────────────────────────
+document.getElementById('btnEditorSave').addEventListener('click', async () => {
+    if (hoseDrawing) finishHose(true);
 
-        $btnSave.addEventListener('click', async () => {
-            const id = $editId.value;
-            const name = $fName.value.trim();
-            if (!name) { alert('Plan-Name erforderlich.'); return; }
+    const btn = document.getElementById('btnEditorSave');
+    btn.disabled = true; btn.textContent = '💾 Speichert…';
 
-            $btnSave.disabled = true;
-            $btnSave.textContent = 'Speichern…';
+    const payload = {
+        objects: edObjects.map(o => ({ type: o.type, name: o.name, lat: o.marker.getLatLng().lat, lng: o.marker.getLatLng().lng })),
+        hoses:   edHoses.map(h => ({ coordinates: h.coords })),
+        texts:   edTexts.map(t => ({ label: t.label, lat: t.marker.getLatLng().lat, lng: t.marker.getLatLng().lng })),
+    };
 
-            const result = await api(id ? 'update' : 'create', id || null, {
-                name,
-                description: $fDesc.value.trim(),
-                lat: parseFloat($fLat.value) || null,
-                lng: parseFloat($fLng.value) || null,
-            });
-            if (result) {
-                closeModal();
-                await loadPlans();
-            }
-            $btnSave.disabled = false;
-            $btnSave.textContent = 'Speichern';
-        });
+    const result = await api('save_map_objects', null, payload, editorPlanId);
+    btn.disabled = false; btn.textContent = '💾 Speichern';
 
-        // ── Start ─────────────────────────────────────────────────────────────────────
-        loadPlans();
-    </script>
+    if (result) {
+        $hint.textContent = '✓ Gespeichert!';
+        $hint.classList.remove('hidden');
+        setTimeout(() => $hint.classList.add('hidden'), 2000);
+    }
+});
+
+// ── Close ─────────────────────────────────────────────────────────────────────
+document.getElementById('btnEditorClose').addEventListener('click', () => {
+    if (hoseDrawing) finishHose(false);
+    setActiveTool(null);
+    $overlay.classList.add('hidden');
+    clearEditorObjects();
+    editorPlanId = null;
+});
+
+function escHtml(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Start ─────────────────────────────────────────────────────────────────────
+loadPlans();
+</script>
 </body>
-
 </html>

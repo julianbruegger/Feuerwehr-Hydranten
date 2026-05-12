@@ -305,6 +305,92 @@ switch ($action) {
         jsonResponse(['ok' => true]);
         break;
 
+    // ── Kartenobjekte abrufen ────────────────────────────────────────────
+    case 'map_objects':
+        $planId = (int) ($_GET['plan_id'] ?? 0);
+        if ($planId <= 0) jsonResponse(['error' => 'plan_id erforderlich'], 400);
+        $check = $isAdmin
+            ? getDb()->prepare('SELECT id FROM wasser_transport_plans WHERE id=?')
+            : getDb()->prepare('SELECT id FROM wasser_transport_plans WHERE id=? AND department_id=?');
+        $check->execute($isAdmin ? [$planId] : [$planId, $deptId]);
+        if (!$check->fetch()) jsonResponse(['error' => 'Nicht gefunden'], 404);
+
+        $objs = getDb()->prepare('SELECT id, type, name, lat, lng FROM wtp_map_objects WHERE plan_id=? ORDER BY id');
+        $objs->execute([$planId]);
+        $hoses = getDb()->prepare('SELECT id, coordinates FROM wtp_map_hoses WHERE plan_id=? ORDER BY id');
+        $hoses->execute([$planId]);
+        $texts = getDb()->prepare('SELECT id, label, lat, lng FROM wtp_map_texts WHERE plan_id=? ORDER BY id');
+        $texts->execute([$planId]);
+
+        $hosesData = array_map(function ($h) {
+            $h['coordinates'] = json_decode($h['coordinates'], true);
+            return $h;
+        }, $hoses->fetchAll());
+
+        jsonResponse([
+            'objects' => $objs->fetchAll(),
+            'hoses'   => $hosesData,
+            'texts'   => $texts->fetchAll(),
+        ]);
+        break;
+
+    // ── Kartenobjekte speichern (ersetzt alle bestehenden) ───────────────
+    case 'save_map_objects':
+        $planId = (int) ($_GET['plan_id'] ?? 0);
+        if ($planId <= 0) jsonResponse(['error' => 'plan_id erforderlich'], 400);
+        $check = $isAdmin
+            ? getDb()->prepare('SELECT id FROM wasser_transport_plans WHERE id=?')
+            : getDb()->prepare('SELECT id FROM wasser_transport_plans WHERE id=? AND department_id=?');
+        $check->execute($isAdmin ? [$planId] : [$planId, $deptId]);
+        if (!$check->fetch()) jsonResponse(['error' => 'Nicht gefunden'], 404);
+
+        $data = json_decode(file_get_contents('php://input'), true);
+        $db   = getDb();
+        $db->beginTransaction();
+        try {
+            $db->prepare('DELETE FROM wtp_map_objects WHERE plan_id=?')->execute([$planId]);
+            $db->prepare('DELETE FROM wtp_map_hoses WHERE plan_id=?')->execute([$planId]);
+            $db->prepare('DELETE FROM wtp_map_texts WHERE plan_id=?')->execute([$planId]);
+
+            $stmtObj = $db->prepare(
+                'INSERT INTO wtp_map_objects (plan_id, type, name, lat, lng) VALUES (?,?,?,?,?)'
+            );
+            foreach ((array)($data['objects'] ?? []) as $o) {
+                $type = in_array($o['type'], ['TLF', 'Motorspritze'], true) ? $o['type'] : 'TLF';
+                $stmtObj->execute([
+                    $planId,
+                    $type,
+                    mb_substr(trim($o['name'] ?? $type), 0, 255),
+                    (float) $o['lat'],
+                    (float) $o['lng'],
+                ]);
+            }
+
+            $stmtHose = $db->prepare(
+                'INSERT INTO wtp_map_hoses (plan_id, coordinates) VALUES (?,?)'
+            );
+            foreach ((array)($data['hoses'] ?? []) as $h) {
+                if (!is_array($h['coordinates']) || count($h['coordinates']) < 2) continue;
+                $stmtHose->execute([$planId, json_encode($h['coordinates'])]);
+            }
+
+            $stmtTxt = $db->prepare(
+                'INSERT INTO wtp_map_texts (plan_id, label, lat, lng) VALUES (?,?,?,?)'
+            );
+            foreach ((array)($data['texts'] ?? []) as $t) {
+                $label = mb_substr(trim($t['label'] ?? ''), 0, 500);
+                if ($label === '') continue;
+                $stmtTxt->execute([$planId, $label, (float) $t['lat'], (float) $t['lng']]);
+            }
+
+            $db->commit();
+        } catch (\Exception $e) {
+            $db->rollBack();
+            jsonResponse(['error' => 'Datenbankfehler: ' . $e->getMessage()], 500);
+        }
+        jsonResponse(['ok' => true]);
+        break;
+
     default:
         jsonResponse(['error' => 'Unbekannte Aktion'], 400);
 }
@@ -335,5 +421,32 @@ function serveMapData()
         );
         $stmt->execute([$deptId]);
     }
-    jsonResponse($stmt->fetchAll());
+    $plans = $stmt->fetchAll();
+
+    // Kartenobjekte pro Plan anhängen
+    $db = getDb();
+    foreach ($plans as &$plan) {
+        $pid = $plan['id'];
+
+        $objs = $db->prepare('SELECT type, name, lat, lng FROM wtp_map_objects WHERE plan_id=? ORDER BY id');
+        $objs->execute([$pid]);
+
+        $hoses = $db->prepare('SELECT coordinates FROM wtp_map_hoses WHERE plan_id=? ORDER BY id');
+        $hoses->execute([$pid]);
+
+        $texts = $db->prepare('SELECT label, lat, lng FROM wtp_map_texts WHERE plan_id=? ORDER BY id');
+        $texts->execute([$pid]);
+
+        $hosesData = array_map(function ($h) {
+            $h['coordinates'] = json_decode($h['coordinates'], true);
+            return $h;
+        }, $hoses->fetchAll());
+
+        $plan['map_objects'] = $objs->fetchAll();
+        $plan['map_hoses']   = $hosesData;
+        $plan['map_texts']   = $texts->fetchAll();
+    }
+    unset($plan);
+
+    jsonResponse($plans);
 }

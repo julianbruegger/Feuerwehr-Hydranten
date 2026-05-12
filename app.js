@@ -1199,11 +1199,69 @@ function createWtpIcon() {
 /**
  * Lädt WasserTransportPlan-Positionen und zeigt sie auf der Karte.
  * Nur sichtbar wenn der Benutzer eingeloggt ist (Token im localStorage).
+ * Beim Klick auf einen WTP-Marker werden die Kartenobjekte des Plans angezeigt.
  */
+
+// Aktive Plan-Overlay-Layer (Fahrzeuge, Schläuche, Texte)
+const wtpOverlayLayers = [];
+
+function clearWtpOverlay() {
+    wtpOverlayLayers.forEach(layer => state.map.removeLayer(layer));
+    wtpOverlayLayers.length = 0;
+}
+
+function showWtpPlanObjects(plan) {
+    clearWtpOverlay();
+
+    (plan.map_objects || []).forEach(o => {
+        const emoji = o.type === 'TLF' ? '🚒' : '🚛';
+        const color = o.type === 'TLF' ? '#38bdf8' : '#f97316';
+        const icon = L.divIcon({
+            className: '',
+            html: `<div style="
+                background:rgba(0,0,0,.8);border:2px solid ${color};
+                border-radius:8px;padding:3px 8px;font-size:13px;
+                color:#fff;white-space:nowrap;
+                box-shadow:0 2px 8px rgba(0,0,0,.6);
+            ">${emoji} ${escHtmlMap(o.name)}</div>`,
+            iconAnchor: [0, 0],
+        });
+        const marker = L.marker([o.lat, o.lng], { icon, zIndexOffset: 300 }).addTo(state.map);
+        wtpOverlayLayers.push(marker);
+    });
+
+    (plan.map_hoses || []).forEach(h => {
+        if (!h.coordinates?.length) return;
+        const line = L.polyline(h.coordinates, {
+            color: '#ef4444', weight: 4, opacity: 0.85
+        }).addTo(state.map);
+        wtpOverlayLayers.push(line);
+    });
+
+    (plan.map_texts || []).forEach(t => {
+        const icon = L.divIcon({
+            className: '',
+            html: `<div style="
+                background:rgba(0,0,0,.8);border:1px solid rgba(74,222,128,.6);
+                border-radius:6px;padding:3px 8px;font-size:12px;
+                color:#4ade80;white-space:nowrap;
+                box-shadow:0 2px 8px rgba(0,0,0,.6);
+            ">${escHtmlMap(t.label)}</div>`,
+            iconAnchor: [0, 0],
+        });
+        const marker = L.marker([t.lat, t.lng], { icon, zIndexOffset: 300 }).addTo(state.map);
+        wtpOverlayLayers.push(marker);
+    });
+}
+
+function escHtmlMap(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
 async function loadWtpMarkers() {
     const token = localStorage.getItem('hw_token');
     const expires = parseInt(localStorage.getItem('hw_expires') || '0', 10);
-    if (!token || Date.now() > expires) return;  // Nicht eingeloggt → keine WTP-Marker
+    if (!token || Date.now() > expires) return;
 
     try {
         const res = await fetch('/admin/wtp_api.php?action=map_data', {
@@ -1215,7 +1273,7 @@ async function loadWtpMarkers() {
 
         plans.forEach((plan) => {
             if (!plan.lat || !plan.lng) return;
-            L.marker([plan.lat, plan.lng], { icon: createWtpIcon(), zIndexOffset: 200 })
+            const marker = L.marker([plan.lat, plan.lng], { icon: createWtpIcon(), zIndexOffset: 200 })
                 .addTo(state.map)
                 .bindPopup(
                     `<b style="color:#38bdf8">💧 ${plan.name}</b><br/>
@@ -1223,6 +1281,9 @@ async function loadWtpMarkers() {
                         style="color:#38bdf8;font-size:12px">Plan öffnen →</a>`,
                     { closeButton: false, maxWidth: 200 }
                 );
+
+            marker.on('popupopen', () => showWtpPlanObjects(plan));
+            marker.on('popupclose', () => clearWtpOverlay());
         });
     } catch (err) {
         console.error({ err }, 'WTP-Marker konnten nicht geladen werden');
