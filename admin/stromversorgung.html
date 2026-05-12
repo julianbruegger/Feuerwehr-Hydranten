@@ -588,9 +588,14 @@
         }
 
         // ── API helper ────────────────────────────────────────────────────────────────
-        async function api(action, id, body) {
+        async function api(action, id, body, params) {
             let url = `/admin/substations_api.php?action=${encodeURIComponent(action)}`;
             if (id) url += `&id=${encodeURIComponent(id)}`;
+            if (params) {
+                Object.entries(params).forEach(([key, val]) => {
+                    url += `&${encodeURIComponent(key)}=${encodeURIComponent(val)}`;
+                });
+            }
             try {
                 const res = await fetch(url, {
                     method: body ? 'POST' : 'GET',
@@ -819,7 +824,7 @@ out center;`;
             if (!container) return;
             container.innerHTML = '<p class="empty-assign">Lade…</p>';
 
-            const data = await api(`list&osm_type=${encodeURIComponent(osmType)}&osm_id=${encodeURIComponent(osmId)}`);
+            const data = await api('list', null, null, { osm_type: osmType, osm_id: osmId });
             const assigns = Array.isArray(data) ? data : [];
 
             // Lokalen Cache aktualisieren
