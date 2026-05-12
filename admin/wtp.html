@@ -687,6 +687,72 @@ Object.entries(TOOL_BTNS).forEach(([tool, btn]) => {
     btn.addEventListener('click', () => setActiveTool(tool));
 });
 
+// ── Hydrant / WTP background layers ──────────────────────────────────────────
+let hydrantLayerGroup = null;
+let wtpLayerGroup     = null;
+
+async function loadBackgroundLayers(lat, lng) {
+    // Hydrants via Overpass
+    if (!hydrantLayerGroup) hydrantLayerGroup = L.layerGroup().addTo(editorMap);
+    hydrantLayerGroup.clearLayers();
+    try {
+        const radius = 2000;
+        const res = await fetch(`/api/overpass.php?type=hydrants&lat=${lat}&lng=${lng}&radius=${radius}`);
+        const data = await res.json();
+        (data.elements || []).forEach(el => {
+            if (!el.lat || !el.lon) return;
+            L.circleMarker([el.lat, el.lon], {
+                radius: 7, color: '#38bdf8', fillColor: '#0f172a',
+                fillOpacity: 1, weight: 2,
+            }).bindTooltip('🚒 Hydrant', { direction: 'top', offset: [0, -6] })
+              .addTo(hydrantLayerGroup);
+        });
+    } catch { /* Overpass unavailable – silently skip */ }
+
+    // WTP plan markers
+    if (!wtpLayerGroup) wtpLayerGroup = L.layerGroup().addTo(editorMap);
+    wtpLayerGroup.clearLayers();
+    try {
+        const res = await fetch('/admin/wtp_api.php?action=map_data');
+        const plans = await res.json();
+        (Array.isArray(plans) ? plans : []).forEach(p => {
+            if (!p.lat || !p.lng) return;
+            const icon = L.divIcon({
+                className: '',
+                html: `<div style="background:#1e293b;border:2px solid #38bdf8;border-radius:6px;
+                    padding:2px 7px;font-size:11px;color:#38bdf8;white-space:nowrap;
+                    box-shadow:0 2px 6px rgba(0,0,0,.6)">💧 ${escHtml(p.name)}</div>`,
+                iconAnchor: [0, 0],
+            });
+            L.marker([p.lat, p.lng], { icon })
+             .bindTooltip(p.name, { direction: 'top' })
+             .addTo(wtpLayerGroup);
+        });
+    } catch { /* skip */ }
+}
+
+// ── Snapping ──────────────────────────────────────────────────────────────────
+const SNAP_PX = 20;
+
+function snapLatLng(latlng) {
+    const pt = editorMap.latLngToContainerPoint(latlng);
+    let best = null, bestDist = Infinity;
+
+    const candidates = [
+        ...edObjects.map(o => o.marker.getLatLng()),
+        ...edTexts.map(t => t.marker.getLatLng()),
+        ...edHoses.flatMap(h => h.coords.map(c => L.latLng(c[0], c[1]))),
+        ...(hoseDrawing ? hosePoints.map(c => L.latLng(c[0], c[1])) : []),
+    ];
+
+    for (const ll of candidates) {
+        const p = editorMap.latLngToContainerPoint(ll);
+        const d = Math.hypot(pt.x - p.x, pt.y - p.y);
+        if (d < SNAP_PX && d < bestDist) { bestDist = d; best = ll; }
+    }
+    return best || latlng;
+}
+
 // ── Open editor ───────────────────────────────────────────────────────────────
 async function openMapEditor(planId) {
     editorPlanId = planId;
@@ -711,8 +777,11 @@ async function openMapEditor(planId) {
     editorMap.setView([lat, lng], 15);
     setTimeout(() => editorMap.invalidateSize(), 100);
 
-    // Load existing objects
-    await loadEditorObjects(planId);
+    // Load existing objects and background layers in parallel
+    await Promise.all([
+        loadEditorObjects(planId),
+        loadBackgroundLayers(lat, lng),
+    ]);
     renderObjectPanel();
 }
 
@@ -751,11 +820,12 @@ function clearEditorObjects() {
 // ── Map click handler ─────────────────────────────────────────────────────────
 function onMapClick(e) {
     if (!activeTool) return;
-    const { lat, lng } = e.latlng;
+    const snapped = snapLatLng(e.latlng);
+    const { lat, lng } = snapped;
 
     if (activeTool === 'TLF' || activeTool === 'Motorspritze') {
         const name = prompt(`Name für ${activeTool}:`, activeTool);
-        if (name === null) return;  // cancelled
+        if (name === null) return;
         const finalName = name.trim() || activeTool;
         const marker = createVehicleMarker(activeTool, finalName, [lat, lng]);
         edObjects.push({ id: nextId(), type: activeTool, name: finalName, lat, lng, marker });
@@ -807,20 +877,47 @@ function finishHose(commit) {
 
 // ── Marker factories ──────────────────────────────────────────────────────────
 function createVehicleMarker(type, name, latlng) {
-    const emoji = type === 'TLF' ? '🚒' : '🚛';
+    const emoji = type === 'TLF' ? '🚒' : '🚒';
     const color  = type === 'TLF' ? '#38bdf8' : '#f97316';
+    const bgDark = type === 'TLF' ? '#0c2233' : '#271300';
+    // Pin shape: badge on top, triangle pointer at bottom
+    const html = `
+<div style="display:flex;flex-direction:column;align-items:center;pointer-events:none">
+  <div style="
+    background:${bgDark};border:2px solid ${color};border-radius:10px;
+    padding:5px 10px;display:flex;align-items:center;gap:5px;
+    box-shadow:0 3px 10px rgba(0,0,0,.7);white-space:nowrap;
+  ">
+    <span style="font-size:16px;line-height:1">${emoji}</span>
+    <span style="font-size:12px;font-weight:700;color:${color};font-family:Inter,system-ui,sans-serif">${escHtml(name)}</span>
+  </div>
+  <div style="
+    width:0;height:0;
+    border-left:6px solid transparent;border-right:6px solid transparent;
+    border-top:8px solid ${color};margin-top:-1px;
+  "></div>
+</div>`;
     const icon = L.divIcon({
         className: '',
-        html: `<div style="
-            background:rgba(0,0,0,.75);border:2px solid ${color};
-            border-radius:8px;padding:3px 7px;font-size:13px;
-            color:#fff;white-space:nowrap;pointer-events:none;
-            box-shadow:0 2px 8px rgba(0,0,0,.6);
-        ">${emoji} ${escHtml(name)}</div>`,
-        iconAnchor: [0, 0],
+        html,
+        iconAnchor: [0, 0], // anchor at top-left; we'll offset via CSS centering below
         popupAnchor: [0, -10],
     });
+
+    // Build the icon, then fix anchor after so the pointer tip sits on the lat/lng point
     const marker = L.marker(latlng, { icon, draggable: true }).addTo(editorMap);
+
+    // After the icon is in the DOM, center-align the pin
+    marker.on('add', () => {
+        const el = marker.getElement();
+        if (el) el.style.transform += ' translate(-50%, -100%)';
+    });
+    // Trigger if already added
+    if (editorMap.hasLayer(marker)) {
+        const el = marker.getElement();
+        if (el) el.style.transform += ' translate(-50%, -100%)';
+    }
+
     marker.on('click', (ev) => {
         if (activeTool !== 'delete') return;
         L.DomEvent.stopPropagation(ev);
@@ -834,17 +931,32 @@ function createVehicleMarker(type, name, latlng) {
 }
 
 function createTextMarker(label, latlng) {
-    const icon = L.divIcon({
-        className: '',
-        html: `<div style="
-            background:rgba(0,0,0,.75);border:1px solid rgba(74,222,128,.6);
-            border-radius:6px;padding:3px 8px;font-size:12px;
-            color:#4ade80;white-space:nowrap;pointer-events:none;
-            box-shadow:0 2px 8px rgba(0,0,0,.6);
-        ">${escHtml(label)}</div>`,
-        iconAnchor: [0, 0],
-    });
+    const html = `
+<div style="display:flex;flex-direction:column;align-items:center;pointer-events:none">
+  <div style="
+    background:#0f2b1a;border:1.5px solid #4ade80;border-radius:8px;
+    padding:4px 10px;font-size:12px;font-weight:600;color:#4ade80;
+    font-family:Inter,system-ui,sans-serif;white-space:nowrap;
+    box-shadow:0 3px 10px rgba(0,0,0,.7);
+  ">${escHtml(label)}</div>
+  <div style="
+    width:0;height:0;
+    border-left:5px solid transparent;border-right:5px solid transparent;
+    border-top:7px solid #4ade80;margin-top:-1px;
+  "></div>
+</div>`;
+    const icon = L.divIcon({ className: '', html, iconAnchor: [0, 0] });
     const marker = L.marker(latlng, { icon, draggable: true }).addTo(editorMap);
+
+    marker.on('add', () => {
+        const el = marker.getElement();
+        if (el) el.style.transform += ' translate(-50%, -100%)';
+    });
+    if (editorMap.hasLayer(marker)) {
+        const el = marker.getElement();
+        if (el) el.style.transform += ' translate(-50%, -100%)';
+    }
+
     marker.on('click', (ev) => {
         if (activeTool !== 'delete') return;
         L.DomEvent.stopPropagation(ev);
@@ -940,6 +1052,8 @@ document.getElementById('btnEditorClose').addEventListener('click', () => {
     setActiveTool(null);
     $overlay.classList.add('hidden');
     clearEditorObjects();
+    hydrantLayerGroup?.clearLayers();
+    wtpLayerGroup?.clearLayers();
     editorPlanId = null;
 });
 
