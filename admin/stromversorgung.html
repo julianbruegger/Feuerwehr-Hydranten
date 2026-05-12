@@ -309,6 +309,19 @@
             padding: 16px
         }
         .modal-backdrop.hidden { display: none }
+        .hidden { display: none !important }
+
+        .form-select {
+            width: 100%;
+            padding: 10px 12px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            font-family: inherit;
+            font-size: 14px;
+        }
+        .form-select:focus { outline: none; border-color: var(--amber) }
 
         .modal {
             background: var(--surface);
@@ -464,6 +477,11 @@
             <input type="hidden" id="editOsmId" />
             <input type="hidden" id="editSubName" />
 
+            <div class="form-field hidden" id="fieldDept">
+                <label class="form-label" for="fDept">Feuerwehr *</label>
+                <select class="form-select" id="fDept"></select>
+            </div>
+
             <div class="form-field">
                 <label class="form-label" for="fBuildingName">Gebäudename / Bezeichnung *</label>
                 <input class="form-input" type="text" id="fBuildingName"
@@ -498,10 +516,12 @@
         // ── Auth-Check ────────────────────────────────────────────────────────────────
         const token = localStorage.getItem('hw_token');
         const expires = parseInt(localStorage.getItem('hw_expires') || '0', 10);
+        const isAdmin = localStorage.getItem('hw_is_admin') === '1';
 
         function clearAuth() {
             localStorage.removeItem('hw_token');
             localStorage.removeItem('hw_dept_name');
+            localStorage.removeItem('hw_is_admin');
             localStorage.removeItem('hw_expires');
             window.location.href = '/login.php';
         }
@@ -523,6 +543,22 @@
         const $fBLat         = document.getElementById('fBLat');
         const $fBLng         = document.getElementById('fBLng');
         const $fNotes        = document.getElementById('fNotes');
+        const $fDept         = document.getElementById('fDept');
+        const $fieldDept     = document.getElementById('fieldDept');
+
+        // ── Abteilungen laden (nur Superadmin) ────────────────────────────────────────
+        if (isAdmin) {
+            fetch('/admin/api.php?action=departments', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (Array.isArray(data)) {
+                    $fDept.innerHTML = data.map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
+                }
+            })
+            .catch(() => {});
+        }
 
         // ── Overpass ──────────────────────────────────────────────────────────────────
         const OVERPASS_ENDPOINTS = [
@@ -838,6 +874,12 @@ out center;`;
             $fBLng.value         = assignment?.building_lng || '';
             $fNotes.value        = assignment?.notes || '';
 
+            // Show department selector for admins only when creating (not editing)
+            $fieldDept.classList.toggle('hidden', !(isAdmin && !assignment));
+            if (isAdmin && !assignment && assignment?.department_id) {
+                $fDept.value = assignment.department_id;
+            }
+
             $modalBackdrop.classList.remove('hidden');
             $fBuildingName.focus();
         }
@@ -853,6 +895,7 @@ out center;`;
             const name = $fBuildingName.value.trim();
             if (!name) { alert('Gebäudename ist Pflichtfeld.'); return; }
 
+            const editId = $editId.value;
             const body = {
                 substation_osm_type: $editOsmType.value,
                 substation_osm_id:   parseInt($editOsmId.value, 10),
@@ -863,8 +906,12 @@ out center;`;
                 building_lng:        $fBLng.value !== '' ? parseFloat($fBLng.value) : null,
                 notes:               $fNotes.value.trim() || null,
             };
+            if (isAdmin && !editId) {
+                const deptId = parseInt($fDept.value, 10);
+                if (!deptId) { alert('Bitte eine Feuerwehr auswählen.'); return; }
+                body.dept_id = deptId;
+            }
 
-            const editId = $editId.value;
             const result = editId
                 ? await api('update', parseInt(editId, 10), body)
                 : await api('create', null, body);
