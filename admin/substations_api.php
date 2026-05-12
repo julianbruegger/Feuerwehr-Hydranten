@@ -29,11 +29,44 @@ require_once __DIR__ . '/../config/auth_helper.php';
 function ensureSchema()
 {
     $db = getDb();
+
+    // Check if table exists
     try {
         $db->query('SELECT 1 FROM substation_assignments LIMIT 1');
+        return;
     } catch (PDOException $e) {
-        $schema = file_get_contents(__DIR__ . '/../config/schema_substations.sql');
-        $db->exec($schema);
+        // Table doesn't exist, continue to create it
+    }
+
+    // Check if fire_departments exists (required foreign key)
+    try {
+        $db->query('SELECT 1 FROM fire_departments LIMIT 1');
+    } catch (PDOException $e) {
+        throw new Exception('fire_departments table not found. Database schema not initialized.');
+    }
+
+    $schemaFile = __DIR__ . '/../config/schema_substations.sql';
+    if (!file_exists($schemaFile)) {
+        throw new Exception("Schema file not found: $schemaFile");
+    }
+
+    $schema = file_get_contents($schemaFile);
+    if (!$schema) {
+        throw new Exception("Failed to read schema file: $schemaFile");
+    }
+
+    // Split by semicolon and execute each statement
+    $statements = array_filter(
+        array_map('trim', explode(';', $schema)),
+        fn($stmt) => strlen($stmt) > 0 && !preg_match('/^\s*--/', $stmt)
+    );
+
+    foreach ($statements as $stmt) {
+        try {
+            $db->exec($stmt . ';');
+        } catch (PDOException $e) {
+            throw new Exception("Failed to execute SQL: " . $e->getMessage());
+        }
     }
 }
 
