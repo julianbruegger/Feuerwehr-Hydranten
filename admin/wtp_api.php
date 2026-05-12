@@ -58,6 +58,24 @@ if ($action === 'map_data') {
     serveMapData();
 }
 
+function ensureWtpObjectsSchema()
+{
+    $db = getDb();
+    try {
+        $db->query('SELECT 1 FROM wtp_map_objects LIMIT 1');
+        return;
+    } catch (PDOException $e) {
+        // table missing – create it
+    }
+    $schemaFile = __DIR__ . '/../config/schema_wtp_objects.sql';
+    $schema = file_get_contents($schemaFile);
+    $schema = preg_replace('/^\s*--.*$/m', '', $schema);
+    $statements = array_filter(array_map('trim', explode(';', $schema)), fn($s) => strlen($s) > 0);
+    foreach ($statements as $stmt) {
+        $db->exec($stmt);
+    }
+}
+
 // Alle anderen Endpoints: Token aus Header ODER GET-Param prüfen
 $tokenStr = getToken();
 $authInfo = $tokenStr ? validateToken($tokenStr) : null;
@@ -69,6 +87,15 @@ if ($authInfo === null) {
 }
 $isAdmin = $authInfo['is_admin'];
 $deptId  = $authInfo['dept_id'];
+
+try {
+    ensureWtpObjectsSchema();
+} catch (Exception $e) {
+    http_response_code(500);
+    header('Content-Type: application/json');
+    echo json_encode(['error' => 'Datenbankfehler: ' . $e->getMessage()]);
+    exit;
+}
 
 switch ($action) {
 
