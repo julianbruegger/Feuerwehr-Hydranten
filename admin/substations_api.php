@@ -72,7 +72,7 @@ try {
     jsonResponse(['error' => 'Datenbankfehler: ' . $e->getMessage()], 500);
 }
 
-switch ($action) {
+try { switch ($action) {
 
     // ── Alle Zuordnungen abrufen ─────────────────────────────────────────
     case 'list':
@@ -252,4 +252,6 @@ switch ($action) {
 
     default:
         jsonResponse(['error' => 'Unbekannte Aktion'], 400);
+} } catch (Exception $e) {
+    jsonResponse(['error' => 'Serverfehler: ' . $e->getMessage()], 500);
 }
