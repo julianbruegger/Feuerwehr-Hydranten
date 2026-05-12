@@ -12,16 +12,40 @@
  * POST   ?action=delete&id=X                       → Zuordnung löschen
  */
 
+function jsonResponse($data, $code = 200)
+{
+    http_response_code($code);
+    header('Content-Type: application/json');
+    echo json_encode($data);
+    exit;
+}
+
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: DENY');
 header('Cache-Control: no-store');
 
 require_once __DIR__ . '/../config/auth_helper.php';
 
-$auth    = requireAuth();
-$isAdmin = $auth['is_admin'];
-$deptId  = $auth['dept_id'];
-$action  = $_GET['action'] ?? '';
+function ensureSchema()
+{
+    $db = getDb();
+    try {
+        $db->query('SELECT 1 FROM substation_assignments LIMIT 1');
+    } catch (PDOException $e) {
+        $schema = file_get_contents(__DIR__ . '/../config/schema_substations.sql');
+        $db->exec($schema);
+    }
+}
+
+try {
+    $auth    = requireAuth();
+    $isAdmin = $auth['is_admin'];
+    $deptId  = $auth['dept_id'];
+    $action  = $_GET['action'] ?? '';
+    ensureSchema();
+} catch (Exception $e) {
+    jsonResponse(['error' => 'Datenbankfehler: ' . $e->getMessage()], 500);
+}
 
 switch ($action) {
 
