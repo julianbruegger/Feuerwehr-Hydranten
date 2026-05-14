@@ -1,0 +1,7 @@
+Options -Indexes
+
+# Protect uploads directory from direct PHP execution
+<FilesMatch "\.php$">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>

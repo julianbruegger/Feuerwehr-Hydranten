@@ -1,0 +1,80 @@
+name: Cleanup Stale Branches
+
+on:
+  schedule:
+    - cron: '0 3 * * 1'   # every Monday at 03:00 UTC
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (list branches without deleting)'
+        type: boolean
+        default: true
+      stale_days:
+        description: 'Delete branches with no commits in this many days'
+        type: number
+        default: 60
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed to delete refs
+
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      STALE_DAYS: ${{ inputs.stale_days || 60 }}
+      DRY_RUN: ${{ inputs.dry_run != 'false' && (github.event_name != 'schedule') }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history so we can read commit dates
+
+      - name: Find and delete stale branches
+        run: |
+          PROTECTED="main master develop"
+          CUTOFF=$(date -d "$STALE_DAYS days ago" +%s)
+          deleted=0
+          skipped=0
+
+          echo "Stale threshold: $STALE_DAYS days (before $(date -d "$STALE_DAYS days ago" --iso-8601))"
+          echo "Dry run: $DRY_RUN"
+          echo "---"
+
+          while IFS= read -r branch; do
+            # Skip protected branches
+            if echo "$PROTECTED" | grep -qw "$branch"; then
+              continue
+            fi
+
+            # Get last commit date on branch
+            last_commit=$(git log -1 --format="%ct" "origin/$branch" 2>/dev/null || echo "0")
+
+            if [ "$last_commit" -lt "$CUTOFF" ]; then
+              age_days=$(( ( $(date +%s) - last_commit ) / 86400 ))
+              last_date=$(date -d "@$last_commit" --iso-8601)
+
+              # Check if branch has an open PR
+              open_pr=$(gh pr list --head "$branch" --state open --json number --jq 'length')
+              if [ "$open_pr" -gt 0 ]; then
+                echo "SKIP  $branch — has open PR ($age_days days old)"
+                skipped=$((skipped + 1))
+                continue
+              fi
+
+              if [ "$DRY_RUN" = "true" ]; then
+                echo "WOULD DELETE  $branch  (last commit: $last_date, $age_days days ago)"
+              else
+                echo "DELETING  $branch  (last commit: $last_date, $age_days days ago)"
+                gh api -X DELETE "repos/${{ github.repository }}/git/refs/heads/$branch"
+                deleted=$((deleted + 1))
+              fi
+            fi
+          done < <(git branch -r | sed 's|origin/||' | sed 's/ //g' | grep -v '^HEAD')
+
+          echo "---"
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "Dry run complete. Run with dry_run=false to actually delete."
+          else
+            echo "Deleted $deleted branch(es). Skipped $skipped (open PRs)."
+          fi
