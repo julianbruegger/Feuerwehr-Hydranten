@@ -1,0 +1,137 @@
+name: Checks
+
+on:
+  push:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  php-lint:
+    name: PHP Syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          tools: none
+
+      - name: Lint all PHP files
+        run: |
+          errors=0
+          while IFS= read -r -d '' file; do
+            if ! php -l "$file" > /dev/null 2>&1; then
+              php -l "$file"
+              errors=$((errors + 1))
+            fi
+          done < <(find . -name '*.php' -not -path './.git/*' -print0)
+          if [ $errors -gt 0 ]; then
+            echo "::error::$errors PHP file(s) have syntax errors"
+            exit 1
+          fi
+          echo "All PHP files OK"
+
+  secrets-check:
+    name: No Secrets Committed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: config/db.php must not be tracked
+        run: |
+          if git ls-files --error-unmatch config/db.php 2>/dev/null; then
+            echo "::error::config/db.php is tracked by git — remove it and add to .gitignore"
+            exit 1
+          fi
+          echo "config/db.php is not tracked — OK"
+
+      - name: Scan for hardcoded credentials
+        run: |
+          patterns=(
+            "DB_PASS\s*=\s*'"
+            "DB_PASS\s*=\s*\""
+            "password\s*=\s*['\"][^'\"]{4,}"
+            "ADMIN_PASSWORD_HASH.*=.*'\\\$"
+          )
+          errors=0
+          for pattern in "${patterns[@]}"; do
+            matches=$(grep -rEn "$pattern" \
+              --include='*.php' --include='*.js' --include='*.env' \
+              --exclude-dir='.git' \
+              --exclude-dir='vendor' \
+              . 2>/dev/null || true)
+            if [ -n "$matches" ]; then
+              echo "::warning::Possible hardcoded credential found:"
+              echo "$matches"
+              errors=$((errors + 1))
+            fi
+          done
+          if [ $errors -gt 0 ]; then
+            echo "::error::Potential hardcoded credentials detected — review the matches above"
+            exit 1
+          fi
+          echo "No hardcoded credentials found — OK"
+
+  required-files:
+    name: Required Files Present
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check required files exist
+        run: |
+          files=(
+            ".htaccess"
+            "index.html"
+            "login.php"
+            "config/auth_helper.php"
+            "php/includes/db.php"
+            "php/includes/auth.php"
+            "php/api/login.php"
+            "php/api/logout.php"
+            "php/api/hoses.php"
+            "php/admin/api/notes.php"
+            "php/admin/api/substations.php"
+            "php/admin/api/wtp.php"
+          )
+          missing=0
+          for f in "${files[@]}"; do
+            if [ ! -f "$f" ]; then
+              echo "::error::Required file missing: $f"
+              missing=$((missing + 1))
+            fi
+          done
+          if [ $missing -gt 0 ]; then
+            exit 1
+          fi
+          echo "All required files present — OK"
+
+  htaccess-check:
+    name: .htaccess Sanity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify key rewrite rules are present
+        run: |
+          errors=0
+          check_rule() {
+            local desc="$1"
+            local pattern="$2"
+            if ! grep -qE "$pattern" .htaccess; then
+              echo "::error::.htaccess is missing rule: $desc"
+              errors=$((errors + 1))
+            fi
+          }
+
+          check_rule "RewriteEngine On"          "^RewriteEngine On"
+          check_rule "Authorization header passthrough" "HTTP_AUTHORIZATION|Authorization"
+          check_rule "API rewrite to php/"        "php/"
+
+          if [ $errors -gt 0 ]; then
+            exit 1
+          fi
+          echo ".htaccess looks OK"
