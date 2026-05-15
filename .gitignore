@@ -16,3 +16,7 @@ uploads/
 .DS_Store
 Thumbs.db
 .env
+
+# Playwright test artifacts
+playwright-screenshots/
+test-admin.js

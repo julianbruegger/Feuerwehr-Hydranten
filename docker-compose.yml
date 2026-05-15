@@ -1,0 +1,34 @@
+services:
+  web:
+    build: ./docker
+    ports:
+      - "8080:80"
+    volumes:
+      - .:/var/www/html
+    environment:
+      DB_HOST: db
+      DB_NAME: hydranten
+      DB_USER: hydranten
+      DB_PASS: hydranten
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: mariadb:10.11
+    environment:
+      MARIADB_DATABASE: hydranten
+      MARIADB_USER: hydranten
+      MARIADB_PASSWORD: hydranten
+      MARIADB_ROOT_PASSWORD: root
+    volumes:
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
+volumes:
+  db_data:

@@ -270,12 +270,17 @@ function initMap() {
             attribution: '© <a href="https://openstreetmap.org">OpenStreetMap</a>',
             maxZoom: 19,
         }),
-        swisstopo: L.tileLayer('https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe/default/current/3857/{z}/{x}/{y}.png', {
+        swisstopo: L.tileLayer('https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe/default/current/3857/{z}/{x}/{y}.jpeg', {
             attribution: '© <a href="https://www.swisstopo.admin.ch">swisstopo</a>',
+            maxNativeZoom: 18,
             maxZoom: 19,
+            crossOrigin: true,
         }),
     };
     state.layers.osm.addTo(state.map);
+    state.layers.swisstopo.on('tileerror', (e) => {
+        console.warn('[Swisstopo] Kachel fehlgeschlagen:', e.tile.src);
+    });
 
     L.control.zoom({ position: 'topleft' }).addTo(state.map);
 }

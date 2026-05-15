@@ -30,9 +30,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             sleep(1);
             jsonResponse(['error' => 'Ungültige Anmeldedaten'], 401);
         }
-        $token = createToken(null, true);
+        $rec = createToken(null, true, 'admin');
+        logLogin(null, $rec['id'], true, 'admin');
         jsonResponse([
-            'token'      => $token,
+            'token'      => $rec['token'],
             'expires_in' => 365 * 24 * 3600,
             'dept_name'  => 'Admin',
             'is_admin'   => true,
@@ -53,12 +54,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         jsonResponse(['error' => 'Ungültige Anmeldedaten'], 401);
     }
 
-    // Token erstellen (365 Tage gültig → clientseitig in localStorage cached)
-    $token = createToken((int) $dept['id']);
+    $rec = createToken((int) $dept['id'], false, 'password');
+    logLogin((int) $dept['id'], $rec['id'], false, 'password');
     jsonResponse([
-        'token' => $token,
-        'expires_in' => 365 * 24 * 3600,   // Sekunden → JS kann Ablauf setzen
-        'dept_name' => $name,
+        'token'      => $rec['token'],
+        'expires_in' => 365 * 24 * 3600,
+        'dept_name'  => $name,
     ]);
 }
 

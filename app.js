@@ -150,6 +150,7 @@ const dom = {
     btnToggleAll: document.getElementById('btnToggleAll'),
     btnBasemap: document.getElementById('btnBasemap'),
     btnRefresh: document.getElementById('btnRefresh'),
+    btnAdmin: document.getElementById('btnAdmin'),
     modeBanner: document.getElementById('modeBanner'),
     btnCancelFire: document.getElementById('btnCancelFire'),
     locationAlert: document.getElementById('locationAlert'),
@@ -257,12 +258,17 @@ function initMap() {
             attribution: '© <a href="https://openstreetmap.org">OpenStreetMap</a>',
             maxZoom: 19,
         }),
-        swisstopo: L.tileLayer('https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe/default/current/3857/{z}/{x}/{y}.png', {
+        swisstopo: L.tileLayer('https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe/default/current/3857/{z}/{x}/{y}.jpeg', {
             attribution: '© <a href="https://www.swisstopo.admin.ch">swisstopo</a>',
+            maxNativeZoom: 18,
             maxZoom: 19,
+            crossOrigin: true,
         }),
     };
     state.layers.osm.addTo(state.map);
+    state.layers.swisstopo.on('tileerror', (e) => {
+        console.warn('[Swisstopo] Kachel fehlgeschlagen:', e.tile.src);
+    });
 
     // Zoom-Steuerung oben links (verhindert Überschneidung mit FABs rechts)
     L.control.zoom({ position: 'topleft' }).addTo(state.map);
@@ -1124,6 +1130,19 @@ function initEventListeners() {
     dom.btnToggleAll.addEventListener('click', toggleAllHydrants);
     dom.btnBasemap.addEventListener('click', toggleBasemap);
     dom.btnRefresh.addEventListener('click', fetchHydrants);
+
+    // Admin / Login button
+    const hwToken = localStorage.getItem('hw_token');
+    const hwExpires = parseInt(localStorage.getItem('hw_expires') || '0', 10);
+    if (hwToken && Date.now() < hwExpires) {
+        dom.btnAdmin.title = 'Admin-Bereich';
+        dom.btnAdmin.classList.add('active');
+    }
+    dom.btnAdmin.addEventListener('click', () => {
+        const tok = localStorage.getItem('hw_token');
+        const exp = parseInt(localStorage.getItem('hw_expires') || '0', 10);
+        window.location.href = (tok && Date.now() < exp) ? '/admin/' : '/login.php';
+    });
 
     // Einstellungen geändert → neu berechnen
     dom.hoseLength.addEventListener('change', () => {
