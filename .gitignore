@@ -20,3 +20,5 @@ Thumbs.db
 # Playwright test artifacts
 playwright-screenshots/
 test-admin.js
+test-satellite.js
+test-viewport.js

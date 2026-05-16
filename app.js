@@ -23,6 +23,9 @@ const DEFAULTS = {
     MAX_OSRM_CANDIDATES: 50,    // Maximale Hydranten-Kandidaten für OSRM-Routing
 };
 
+const VIEWPORT_MIN_ZOOM = 13;    // Unterhalb dieses Zooms keine Viewport-Hydranten
+const VIEWPORT_MAX_RADIUS = 3000; // Maximaler Radius für Viewport-Abruf in Metern
+
 /** Overpass API Endpunkte (Hauptserver + Mirrors für Fallback) */
 const OVERPASS_ENDPOINTS = [
     'https://overpass-api.de/api/interpreter',
@@ -129,9 +132,11 @@ const state = {
         accuracy: null,         // Genauigkeitskreis
         hydrants: [],           // Leaflet Marker für Hydranten (Top-Ergebnisse)
         allHydrants: [],        // Leaflet Marker für alle Hydranten (Overlay)
+        viewportHydrants: [],   // Leaflet Marker für Viewport-geladene Hydranten
         route: null,            // Leaflet Polyline für Route zum Hydranten
     },
     showAllHydrants: false,
+    viewportHydrantIds: new Set(), // OSM-Node-IDs bereits als Viewport-Marker geladen
     fireMode: false,        // Ist Brandpositions-Modus aktiv?
     selectedHydrantId: null,        // Aktuell ausgewählter Hydrant
     watchId: null,         // GPS-Watch-ID
@@ -264,10 +269,19 @@ function initMap() {
             maxZoom: 19,
             crossOrigin: true,
         }),
+        satellite: L.tileLayer('https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissimage/default/current/3857/{z}/{x}/{y}.jpeg', {
+            attribution: '© <a href="https://www.swisstopo.admin.ch">swisstopo Luftbild</a>',
+            maxNativeZoom: 19,
+            maxZoom: 21,
+            crossOrigin: true,
+        }),
     };
+    state.currentBasemap = 'osm';
     state.layers.osm.addTo(state.map);
-    state.layers.swisstopo.on('tileerror', (e) => {
-        console.warn('[Swisstopo] Kachel fehlgeschlagen:', e.tile.src);
+    ['swisstopo', 'satellite'].forEach(name => {
+        state.layers[name].on('tileerror', (e) => {
+            console.warn(`[Swisstopo/${name}] Kachel fehlgeschlagen:`, e.tile.src);
+        });
     });
 
     // Zoom-Steuerung oben links (verhindert Überschneidung mit FABs rechts)
@@ -275,6 +289,10 @@ function initMap() {
 
     // Kartenklick → Brandposition setzen (wenn Modus aktiv)
     state.map.on('click', onMapClick);
+
+    // Viewport-Hydranten: beim Verschieben/Zoomen nachladen
+    state.map.on('moveend', onMapMoveEnd);
+
 }
 
 // ─────────────────────────────────────────
@@ -823,14 +841,28 @@ function clearHydrantMarkers() {
 
 const ALL_HYDRANT_ICON = L.divIcon({
     className: '',
-    html: `<div style="
-        width:10px; height:10px;
-        background:rgba(230,57,70,0.5);
-        border:1.5px solid #e63946;
-        border-radius:50%;
-    "></div>`,
-    iconSize: [10, 10],
-    iconAnchor: [5, 5],
+    html: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="26" viewBox="0 0 20 26">
+      <!-- cap -->
+      <rect x="5" y="0" width="10" height="3" rx="1.5" fill="#e63946"/>
+      <!-- neck -->
+      <rect x="8" y="3" width="4" height="2" fill="#c1121f"/>
+      <!-- body -->
+      <rect x="3" y="5" width="14" height="13" rx="3" fill="#e63946"/>
+      <!-- middle band -->
+      <rect x="3" y="11" width="14" height="2.5" fill="#c1121f"/>
+      <!-- left outlet -->
+      <rect x="0" y="9" width="3" height="4" rx="1" fill="#c1121f"/>
+      <!-- right outlet -->
+      <rect x="17" y="9" width="3" height="4" rx="1" fill="#c1121f"/>
+      <!-- base -->
+      <rect x="5" y="18" width="10" height="3" rx="1" fill="#c1121f"/>
+      <rect x="3" y="21" width="14" height="3" rx="1.5" fill="#9d0208"/>
+      <!-- bolt highlight -->
+      <circle cx="10" cy="8" r="2" fill="#c1121f"/>
+      <circle cx="10" cy="8" r="1" fill="#e63946"/>
+    </svg>`,
+    iconSize: [20, 26],
+    iconAnchor: [10, 26],
 });
 
 function renderAllHydrantMarkers() {
@@ -841,8 +873,9 @@ function renderAllHydrantMarkers() {
     }));
 
     state.hydrants.forEach(h => {
-        // Skip hydrants already shown as ranked top markers
         if (state.selectedHydrantId === h.id) return;
+        // Skip hydrants already visible as viewport markers
+        if (state.viewportHydrantIds.has(h.id)) return;
         const marker = L.marker([h.lat, h.lng], {
             icon: ALL_HYDRANT_ICON,
             zIndexOffset: -100,
@@ -867,16 +900,67 @@ function toggleAllHydrants() {
     }
 }
 
-function toggleBasemap() {
-    const useSwisstopo = !state.map.hasLayer(state.layers.swisstopo);
-    if (useSwisstopo) {
-        state.map.removeLayer(state.layers.osm);
-        state.layers.swisstopo.addTo(state.map);
-    } else {
-        state.map.removeLayer(state.layers.swisstopo);
-        state.layers.osm.addTo(state.map);
+// ─────────────────────────────────────────
+// Viewport-basiertes Hydrant-Nachladen
+// ─────────────────────────────────────────
+
+function clearViewportHydrantMarkers() {
+    state.markers.viewportHydrants.forEach(m => state.map.removeLayer(m));
+    state.markers.viewportHydrants = [];
+    state.viewportHydrantIds.clear();
+}
+
+let _viewportDebounce = null;
+
+function onMapMoveEnd() {
+    clearTimeout(_viewportDebounce);
+    _viewportDebounce = setTimeout(loadViewportHydrants, 400);
+}
+
+async function loadViewportHydrants() {
+    if (state.map.getZoom() < VIEWPORT_MIN_ZOOM) {
+        clearViewportHydrantMarkers();
+        return;
     }
-    dom.btnBasemap.classList.toggle('active', useSwisstopo);
+
+    const bounds = state.map.getBounds();
+    const center = bounds.getCenter();
+    const radiusM = Math.min(
+        Math.round(L.latLng(center.lat, center.lng).distanceTo(bounds.getNorthEast())),
+        VIEWPORT_MAX_RADIUS
+    );
+
+    try {
+        const data = await serverProxyFetch('hydrants', { lat: center.lat, lng: center.lng }, radiusM);
+        const positionIds = new Set(state.hydrants.map(h => h.id));
+
+        (data.elements || []).forEach(el => {
+            if (state.viewportHydrantIds.has(el.id)) return;
+            if (positionIds.has(el.id)) return;
+
+            state.viewportHydrantIds.add(el.id);
+            const h = { id: el.id, lat: el.lat, lng: el.lon, tags: el.tags || {} };
+            const marker = L.marker([h.lat, h.lng], {
+                icon: ALL_HYDRANT_ICON,
+                zIndexOffset: -100,
+            }).addTo(state.map);
+            marker.on('click', () => selectHydrant(h));
+            state.markers.viewportHydrants.push(marker);
+        });
+    } catch (e) {
+        console.warn('[Viewport] Hydranten laden fehlgeschlagen:', e);
+    }
+}
+
+function toggleBasemap() {
+    const cycle = { osm: 'swisstopo', swisstopo: 'satellite', satellite: 'osm' };
+    const titles = { osm: 'Swisstopo Karte', swisstopo: 'Luftbild', satellite: 'OpenStreetMap' };
+    const next = cycle[state.currentBasemap];
+    state.map.removeLayer(state.layers[state.currentBasemap]);
+    state.layers[next].addTo(state.map);
+    state.currentBasemap = next;
+    dom.btnBasemap.classList.toggle('active', next !== 'osm');
+    dom.btnBasemap.title = titles[next];
 }
 
 // ─────────────────────────────────────────
