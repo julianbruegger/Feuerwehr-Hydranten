@@ -43,17 +43,22 @@ function validateToken($token): ?array
 
     $db = getDb();
     $stmt = $db->prepare(
-        'SELECT department_id, is_admin FROM auth_tokens
-         WHERE token = ? AND expires_at > NOW()
+        'SELECT id, department_id, is_admin FROM auth_tokens
+         WHERE token = ? AND expires_at > NOW() AND revoked_at IS NULL
          LIMIT 1'
     );
     $stmt->execute([$token]);
     $row = $stmt->fetch();
 
     if (!$row) return null;
+
+    $db->prepare('UPDATE auth_tokens SET last_seen_at = NOW() WHERE id = ?')
+       ->execute([$row['id']]);
+
     return [
         'dept_id'  => $row['department_id'] !== null ? (int) $row['department_id'] : null,
         'is_admin' => (bool) $row['is_admin'],
+        'token_id' => (int) $row['id'],
     ];
 }
 
@@ -98,18 +103,34 @@ function requireAuth(): array
  * Erstellt einen neuen Langzeit-Token (365 Tage) für eine Feuerwehr.
  * Gibt den Token-String zurück.
  */
-function createToken(?int $departmentId, bool $isAdmin = false): string
-{
-    $token = bin2hex(random_bytes(32));   // 64 hex chars
-    $expiresAt = date('Y-m-d H:i:s', strtotime('+365 days'));
+function createToken(
+    ?int $departmentId,
+    bool $isAdmin = false,
+    string $source = 'password',
+    ?string $label = null,
+    ?string $expiresAt = null
+): array {
+    $token     = bin2hex(random_bytes(32));
+    $expiresAt = $expiresAt ?? date('Y-m-d H:i:s', strtotime('+365 days'));
 
     $db = getDb();
-    $stmt = $db->prepare(
-        'INSERT INTO auth_tokens (department_id, is_admin, token, expires_at) VALUES (?, ?, ?, ?)'
-    );
-    $stmt->execute([$departmentId, $isAdmin ? 1 : 0, $token, $expiresAt]);
+    $db->prepare(
+        'INSERT INTO auth_tokens (department_id, is_admin, source, label, token, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?)'
+    )->execute([$departmentId, $isAdmin ? 1 : 0, $source, $label, $token, $expiresAt]);
 
-    return $token;
+    return ['token' => $token, 'id' => (int) $db->lastInsertId()];
+}
+
+function logLogin(?int $departmentId, int $tokenId, bool $isAdmin, string $source): void
+{
+    $ip = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? null;
+    if ($ip) $ip = trim(explode(',', $ip)[0]);
+    $ua = isset($_SERVER['HTTP_USER_AGENT']) ? substr($_SERVER['HTTP_USER_AGENT'], 0, 500) : null;
+    getDb()->prepare(
+        'INSERT INTO login_log (department_id, token_id, is_admin, source, ip, user_agent)
+         VALUES (?, ?, ?, ?, ?, ?)'
+    )->execute([$departmentId, $tokenId, $isAdmin ? 1 : 0, $source, $ip, $ua]);
 }
 
 // ─── JSON-Antwort ─────────────────────────────────────────────────────────

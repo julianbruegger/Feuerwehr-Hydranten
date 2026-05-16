@@ -270,12 +270,26 @@ function initMap() {
             attribution: '© <a href="https://openstreetmap.org">OpenStreetMap</a>',
             maxZoom: 19,
         }),
-        swisstopo: L.tileLayer('https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe/default/current/3857/{z}/{x}/{y}.png', {
+        swisstopo: L.tileLayer('https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe/default/current/3857/{z}/{x}/{y}.jpeg', {
             attribution: '© <a href="https://www.swisstopo.admin.ch">swisstopo</a>',
+            maxNativeZoom: 18,
             maxZoom: 19,
+            crossOrigin: true,
+        }),
+        satellite: L.tileLayer('https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissimage/default/current/3857/{z}/{x}/{y}.jpeg', {
+            attribution: '© <a href="https://www.swisstopo.admin.ch">swisstopo Luftbild</a>',
+            maxNativeZoom: 19,
+            maxZoom: 21,
+            crossOrigin: true,
         }),
     };
+    state.currentBasemap = 'osm';
     state.layers.osm.addTo(state.map);
+    ['swisstopo', 'satellite'].forEach(name => {
+        state.layers[name].on('tileerror', (e) => {
+            console.warn(`[Swisstopo/${name}] Kachel fehlgeschlagen:`, e.tile.src);
+        });
+    });
 
     L.control.zoom({ position: 'topleft' }).addTo(state.map);
 }
@@ -540,15 +554,14 @@ function toggleAllSubstations() {
 }
 
 function toggleBasemap() {
-    const useSwisstopo = !state.map.hasLayer(state.layers.swisstopo);
-    if (useSwisstopo) {
-        state.map.removeLayer(state.layers.osm);
-        state.layers.swisstopo.addTo(state.map);
-    } else {
-        state.map.removeLayer(state.layers.swisstopo);
-        state.layers.osm.addTo(state.map);
-    }
-    dom.btnBasemap.classList.toggle('active', useSwisstopo);
+    const cycle = { osm: 'swisstopo', swisstopo: 'satellite', satellite: 'osm' };
+    const titles = { osm: 'Swisstopo Karte', swisstopo: 'Luftbild', satellite: 'OpenStreetMap' };
+    const next = cycle[state.currentBasemap];
+    state.map.removeLayer(state.layers[state.currentBasemap]);
+    state.layers[next].addTo(state.map);
+    state.currentBasemap = next;
+    dom.btnBasemap.classList.toggle('active', next !== 'osm');
+    dom.btnBasemap.title = titles[next];
 }
 
 function focusSubstation(s, index) {

@@ -541,6 +541,203 @@
                 opacity: 1;
             }
         }
+
+        /* ─── Tab bar ─── */
+        .tab-bar {
+            display: flex;
+            gap: 4px;
+            padding: 10px 16px 0;
+            background: var(--bg);
+            border-bottom: 1px solid var(--border);
+            overflow-x: auto;
+        }
+
+        .tab-btn {
+            padding: 8px 18px;
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            border-radius: 0;
+            color: var(--muted);
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: color 0.2s, border-color 0.2s;
+            margin-bottom: -1px;
+        }
+
+        .tab-btn:hover { color: var(--text); }
+
+        .tab-btn.active {
+            color: var(--red);
+            border-bottom-color: var(--red);
+        }
+
+        /* ─── Magic-links panel ─── */
+        .ml-form {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 18px;
+            margin-bottom: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .ml-result {
+            background: rgba(74, 222, 128, 0.08);
+            border: 1px solid rgba(74, 222, 128, 0.3);
+            border-radius: var(--radius);
+            padding: 14px 16px;
+            margin-bottom: 16px;
+        }
+
+        .ml-result-label {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--green);
+            margin-bottom: 8px;
+        }
+
+        .ml-url-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .ml-url {
+            flex: 1;
+            font-size: 12px;
+            font-family: monospace;
+            color: var(--text);
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px 10px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .btn-copy {
+            padding: 7px 14px;
+            background: var(--green);
+            color: #111;
+            border: none;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: opacity 0.2s;
+        }
+
+        .btn-copy:hover { opacity: 0.85; }
+
+        /* ─── Sessions / logins table ─── */
+        .sub-tabs {
+            display: flex;
+            gap: 6px;
+        }
+
+        .sub-tab {
+            padding: 6px 14px;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            color: var(--muted);
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .sub-tab.active {
+            background: rgba(230, 57, 70, 0.12);
+            border-color: var(--red);
+            color: var(--red);
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        .data-table th {
+            text-align: left;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--muted);
+            padding: 8px 10px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .data-table td {
+            padding: 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+            vertical-align: middle;
+            color: var(--text);
+        }
+
+        .data-table tr:last-child td { border-bottom: none; }
+
+        .source-badge {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            padding: 3px 8px;
+            border-radius: 999px;
+        }
+
+        .source-badge.password {
+            background: rgba(69,123,157,0.15);
+            color: var(--blue);
+            border: 1px solid rgba(69,123,157,0.3);
+        }
+
+        .source-badge.magic {
+            background: rgba(74,222,128,0.12);
+            color: var(--green);
+            border: 1px solid rgba(74,222,128,0.3);
+        }
+
+        .source-badge.admin {
+            background: rgba(244,162,97,0.12);
+            color: var(--amber);
+            border: 1px solid rgba(244,162,97,0.3);
+        }
+
+        .btn-revoke {
+            padding: 4px 10px;
+            background: transparent;
+            border: 1px solid rgba(230,57,70,0.4);
+            border-radius: 6px;
+            color: var(--red);
+            font-family: inherit;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .btn-revoke:hover { background: rgba(230,57,70,0.1); }
+
+        .table-wrap {
+            overflow-x: auto;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+        }
     </style>
 </head>
 
@@ -556,51 +753,117 @@
         <button class="btn-logout" id="btnLogout">Abmelden</button>
     </header>
 
+    <!-- Tab navigation -->
+    <nav class="tab-bar" id="tabBar">
+        <button class="tab-btn active" data-tab="eintraege">Einträge</button>
+        <button class="tab-btn tab-admin hidden" data-tab="magic">Magic-Links</button>
+        <button class="tab-btn tab-admin hidden" data-tab="logins">Logins</button>
+    </nav>
+
     <div class="container">
-        <div class="toolbar">
-            <span class="toolbar__title">Sensible Einträge</span>
-            <button class="btn-primary" id="btnNew">
-                <span>＋</span> Neuer Eintrag
-            </button>
-        </div>
 
-        <!-- Submodule Nav -->
-        <div class="nav-cards">
-            <a href="/admin/wtp.html" class="nav-card nav-card--water">
-                <div class="nav-card__icon">💧</div>
-                <div class="nav-card__meta">
-                    <div class="nav-card__title">WasserTransportPläne</div>
-                    <div class="nav-card__sub">Pläne verwalten, Notizen &amp; Dateien hochladen</div>
+        <!-- ─── Panel: Einträge ─── -->
+        <div id="panelEintraege" class="panel">
+            <div class="toolbar">
+                <span class="toolbar__title">Sensible Einträge</span>
+                <button class="btn-primary" id="btnNew">
+                    <span>＋</span> Neuer Eintrag
+                </button>
+            </div>
+
+            <!-- Submodule Nav -->
+            <div class="nav-cards">
+                <a href="/admin/wtp.html" class="nav-card nav-card--water">
+                    <div class="nav-card__icon">💧</div>
+                    <div class="nav-card__meta">
+                        <div class="nav-card__title">WasserTransportPläne</div>
+                        <div class="nav-card__sub">Pläne verwalten, Notizen &amp; Dateien hochladen</div>
+                    </div>
+                    <span class="nav-card__arrow">›</span>
+                </a>
+                <a href="/admin/stromversorgung.html" class="nav-card nav-card--strom">
+                    <div class="nav-card__icon">⚡</div>
+                    <div class="nav-card__meta">
+                        <div class="nav-card__title">Stromversorgung</div>
+                        <div class="nav-card__sub">Gebäude Trafostationen zuordnen</div>
+                    </div>
+                    <span class="nav-card__arrow">›</span>
+                </a>
+            </div>
+
+            <!-- Kategorie-Filter -->
+            <div class="filters">
+                <button class="filter-btn active" data-cat="">Alle</button>
+                <button class="filter-btn" data-cat="schluessel">🔑 Schlüssel</button>
+                <button class="filter-btn" data-cat="gefahrgut">⚠️ Gefahrgut</button>
+                <button class="filter-btn" data-cat="gebaeude">🏢 Gebäude</button>
+                <button class="filter-btn" data-cat="kontakt">📞 Kontakt</button>
+                <button class="filter-btn" data-cat="sonstiges">📋 Sonstiges</button>
+            </div>
+
+            <!-- Einträge-Liste -->
+            <div id="entriesList">
+                <div class="empty">
+                    <div class="empty-icon">⏳</div>
+                    <p>Lade Einträge…</p>
                 </div>
-                <span class="nav-card__arrow">›</span>
-            </a>
-            <a href="/admin/stromversorgung.html" class="nav-card nav-card--strom">
-                <div class="nav-card__icon">⚡</div>
-                <div class="nav-card__meta">
-                    <div class="nav-card__title">Stromversorgung</div>
-                    <div class="nav-card__sub">Gebäude Trafostationen zuordnen</div>
-                </div>
-                <span class="nav-card__arrow">›</span>
-            </a>
-        </div>
-
-        <!-- Kategorie-Filter -->
-        <div class="filters">
-            <button class="filter-btn active" data-cat="">Alle</button>
-            <button class="filter-btn" data-cat="schluessel">🔑 Schlüssel</button>
-            <button class="filter-btn" data-cat="gefahrgut">⚠️ Gefahrgut</button>
-            <button class="filter-btn" data-cat="gebaeude">🏢 Gebäude</button>
-            <button class="filter-btn" data-cat="kontakt">📞 Kontakt</button>
-            <button class="filter-btn" data-cat="sonstiges">📋 Sonstiges</button>
-        </div>
-
-        <!-- Einträge-Liste -->
-        <div id="entriesList">
-            <div class="empty">
-                <div class="empty-icon">⏳</div>
-                <p>Lade Einträge…</p>
             </div>
         </div>
+
+        <!-- ─── Panel: Magic-Links (admin only) ─── -->
+        <div id="panelMagic" class="panel hidden">
+            <div class="toolbar">
+                <span class="toolbar__title">Magic-Links</span>
+            </div>
+
+            <div class="ml-form">
+                <div>
+                    <label class="form-label" for="mlDept">Feuerwehr</label>
+                    <select class="form-select" id="mlDept"></select>
+                </div>
+                <div>
+                    <label class="form-label" for="mlLabel">Bezeichnung <span style="font-weight:400;text-transform:none">(optional, z.B. "Tablet Fahrzeug 1")</span></label>
+                    <input class="form-input" type="text" id="mlLabel" placeholder="Gerät oder Zweck" />
+                </div>
+                <button class="btn-primary" id="btnGenerate" style="align-self:flex-start">
+                    Link generieren
+                </button>
+            </div>
+
+            <div id="mlResult" class="ml-result hidden">
+                <div class="ml-result-label">Link erstellt</div>
+                <div class="ml-url-row">
+                    <span class="ml-url" id="mlUrl"></span>
+                    <button class="btn-copy" id="btnCopyUrl">Kopieren</button>
+                </div>
+            </div>
+
+            <div class="toolbar" style="margin-top:8px">
+                <span class="toolbar__title" style="font-size:15px">Aktive Links</span>
+            </div>
+            <div id="mlList" class="table-wrap">
+                <div class="empty" style="padding:30px"><p>Noch keine Magic-Links vorhanden.</p></div>
+            </div>
+        </div>
+
+        <!-- ─── Panel: Logins (admin only) ─── -->
+        <div id="panelLogins" class="panel hidden">
+            <div class="toolbar">
+                <span class="toolbar__title">Logins</span>
+                <div class="sub-tabs">
+                    <button class="sub-tab active" data-subtab="active">Aktiv</button>
+                    <button class="sub-tab" data-subtab="history">Verlauf</button>
+                </div>
+            </div>
+
+            <div id="subPanelActive" class="table-wrap">
+                <div class="empty" style="padding:30px"><p>Lade…</p></div>
+            </div>
+            <div id="subPanelHistory" class="table-wrap hidden">
+                <div class="empty" style="padding:30px"><p>Lade…</p></div>
+            </div>
+        </div>
+
     </div>
 
     <!-- Modal: Eintrag erstellen/bearbeiten -->
@@ -686,6 +949,24 @@
 
         $deptName.textContent = deptName;
 
+        // ─── Admin-only tabs ──────────────────────────────────────────────────
+        if (isAdmin) {
+            document.querySelectorAll('.tab-admin').forEach(el => el.classList.remove('hidden'));
+        }
+
+        document.getElementById('tabBar').addEventListener('click', e => {
+            const btn = e.target.closest('.tab-btn');
+            if (!btn) return;
+            document.querySelector('.tab-btn.active')?.classList.remove('active');
+            btn.classList.add('active');
+            const tab = btn.dataset.tab;
+            document.querySelectorAll('.panel').forEach(p => p.classList.add('hidden'));
+            const panelId = 'panel' + tab.charAt(0).toUpperCase() + tab.slice(1);
+            document.getElementById(panelId).classList.remove('hidden');
+            if (tab === 'magic') loadMagicLinks();
+            if (tab === 'logins') loadActiveSessions();
+        });
+
         // ─── Feuerwehren laden (nur Admin) ────────────────────────────────────
         let departments = [];
         if (isAdmin) {
@@ -693,6 +974,9 @@
                 if (Array.isArray(data)) {
                     departments = data;
                     $fDept.innerHTML = data.map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
+                    // Populate magic-link dept select
+                    const $mlDept = document.getElementById('mlDept');
+                    if ($mlDept) $mlDept.innerHTML = data.map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
                 }
             });
         }
@@ -888,6 +1172,169 @@
                 });
             } catch { /* ignore logout errors */ }
             clearAuth();
+        });
+
+        // ─── Generic fetch helper for new endpoints ───────────────────────────
+        async function callEndpoint(path, method = 'GET', body = null) {
+            try {
+                const res = await fetch(path, {
+                    method,
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: body ? JSON.stringify(body) : undefined,
+                });
+                if (res.status === 401) clearAuth();
+                const data = await res.json();
+                if (data.error) { alert('Fehler: ' + data.error); return null; }
+                return data;
+            } catch {
+                alert('Netzwerkfehler – bitte erneut versuchen.');
+                return null;
+            }
+        }
+
+        // ─── Magic-Links ─────────────────────────────────────────────────────
+        function sourceBadge(src) {
+            const map = { password: 'Passwort', magic: 'Magic-Link', admin: 'Admin' };
+            return `<span class="source-badge ${esc(src)}">${esc(map[src] || src)}</span>`;
+        }
+
+        function fmtDate(s) {
+            if (!s) return '–';
+            return new Date(s).toLocaleString('de-CH', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+        }
+
+        async function loadMagicLinks() {
+            const $list = document.getElementById('mlList');
+            $list.innerHTML = '<div class="empty" style="padding:30px"><p>Lade…</p></div>';
+            const rows = await callEndpoint('/admin/api/sessions?action=list');
+            if (!rows) return;
+            const magic = rows.filter(r => r.source === 'magic' && r.is_active);
+            if (!magic.length) {
+                $list.innerHTML = '<div class="empty" style="padding:30px"><p>Noch keine Magic-Links vorhanden.</p></div>';
+                return;
+            }
+            $list.innerHTML = `<table class="data-table">
+              <thead><tr>
+                <th>Feuerwehr</th><th>Bezeichnung</th><th>Erstellt</th><th>Zuletzt genutzt</th><th></th>
+              </tr></thead>
+              <tbody>${magic.map(r => `
+                <tr>
+                  <td>${esc(r.dept_name || '–')}</td>
+                  <td>${esc(r.label || '–')}</td>
+                  <td>${fmtDate(r.created_at)}</td>
+                  <td>${fmtDate(r.last_seen_at)}</td>
+                  <td><button class="btn-revoke" data-revoke="${r.id}">Widerrufen</button></td>
+                </tr>`).join('')}
+              </tbody></table>`;
+        }
+
+        document.getElementById('btnGenerate').addEventListener('click', async () => {
+            const deptId = parseInt(document.getElementById('mlDept').value, 10);
+            const label  = document.getElementById('mlLabel').value.trim() || null;
+            if (!deptId) { alert('Bitte eine Feuerwehr auswählen.'); return; }
+
+            const btn = document.getElementById('btnGenerate');
+            btn.disabled = true;
+            const result = await callEndpoint('/admin/api/sessions?action=create_magic', 'POST', { dept_id: deptId, label });
+            btn.disabled = false;
+            if (!result) return;
+
+            const $result = document.getElementById('mlResult');
+            document.getElementById('mlUrl').textContent = result.url;
+            $result.classList.remove('hidden');
+            document.getElementById('mlLabel').value = '';
+            loadMagicLinks();
+        });
+
+        document.getElementById('btnCopyUrl').addEventListener('click', () => {
+            const url = document.getElementById('mlUrl').textContent;
+            navigator.clipboard.writeText(url).then(() => {
+                const btn = document.getElementById('btnCopyUrl');
+                btn.textContent = 'Kopiert!';
+                setTimeout(() => btn.textContent = 'Kopieren', 2000);
+            });
+        });
+
+        document.getElementById('mlList').addEventListener('click', async e => {
+            const btn = e.target.closest('[data-revoke]');
+            if (!btn) return;
+            if (!confirm('Magic-Link widerrufen? Geräte mit diesem Link werden abgemeldet.')) return;
+            const id = parseInt(btn.dataset.revoke, 10);
+            const ok = await callEndpoint(`/admin/api/sessions?action=revoke&id=${id}`, 'POST');
+            if (ok) loadMagicLinks();
+        });
+
+        // ─── Sessions / Logins ───────────────────────────────────────────────
+        async function loadActiveSessions() {
+            const $pane = document.getElementById('subPanelActive');
+            $pane.innerHTML = '<div class="empty" style="padding:30px"><p>Lade…</p></div>';
+            const rows = await callEndpoint('/admin/api/sessions?action=list');
+            if (!rows) return;
+            const active = rows.filter(r => r.is_active);
+            if (!active.length) {
+                $pane.innerHTML = '<div class="empty" style="padding:30px"><p>Keine aktiven Sitzungen.</p></div>';
+                return;
+            }
+            $pane.innerHTML = `<table class="data-table">
+              <thead><tr>
+                <th>Feuerwehr</th><th>Typ</th><th>Bezeichnung</th><th>Erstellt</th><th>Zuletzt aktiv</th><th></th>
+              </tr></thead>
+              <tbody>${active.map(r => `
+                <tr>
+                  <td>${esc(r.is_admin ? 'Admin' : (r.dept_name || '–'))}</td>
+                  <td>${sourceBadge(r.source)}</td>
+                  <td>${esc(r.label || '–')}</td>
+                  <td>${fmtDate(r.created_at)}</td>
+                  <td>${fmtDate(r.last_seen_at)}</td>
+                  <td><button class="btn-revoke" data-revoke-session="${r.id}">Abmelden</button></td>
+                </tr>`).join('')}
+              </tbody></table>`;
+        }
+
+        async function loadLoginHistory() {
+            const $pane = document.getElementById('subPanelHistory');
+            $pane.innerHTML = '<div class="empty" style="padding:30px"><p>Lade…</p></div>';
+            const rows = await callEndpoint('/admin/api/logins?limit=100');
+            if (!rows) return;
+            if (!rows.length) {
+                $pane.innerHTML = '<div class="empty" style="padding:30px"><p>Keine Login-Ereignisse.</p></div>';
+                return;
+            }
+            $pane.innerHTML = `<table class="data-table">
+              <thead><tr>
+                <th>Feuerwehr</th><th>Typ</th><th>IP</th><th>Zeit</th>
+              </tr></thead>
+              <tbody>${rows.map(r => `
+                <tr>
+                  <td>${esc(r.is_admin ? 'Admin' : (r.dept_name || '–'))}</td>
+                  <td>${sourceBadge(r.source)}</td>
+                  <td>${esc(r.ip || '–')}</td>
+                  <td>${fmtDate(r.created_at)}</td>
+                </tr>`).join('')}
+              </tbody></table>`;
+        }
+
+        document.getElementById('subPanelActive').addEventListener('click', async e => {
+            const btn = e.target.closest('[data-revoke-session]');
+            if (!btn) return;
+            if (!confirm('Diese Sitzung beenden?')) return;
+            const id = parseInt(btn.dataset.revokeSession, 10);
+            const ok = await callEndpoint(`/admin/api/sessions?action=revoke&id=${id}`, 'POST');
+            if (ok) loadActiveSessions();
+        });
+
+        document.querySelector('.sub-tabs')?.addEventListener('click', e => {
+            const btn = e.target.closest('.sub-tab');
+            if (!btn) return;
+            document.querySelector('.sub-tab.active')?.classList.remove('active');
+            btn.classList.add('active');
+            const sub = btn.dataset.subtab;
+            document.getElementById('subPanelActive').classList.toggle('hidden', sub !== 'active');
+            document.getElementById('subPanelHistory').classList.toggle('hidden', sub !== 'history');
+            if (sub === 'history') loadLoginHistory();
         });
 
         // ─── Start ───────────────────────────────────────────────────────────
