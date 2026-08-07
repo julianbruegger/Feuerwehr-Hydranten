@@ -81,7 +81,7 @@ $expiresMsJson = json_encode($expiresMs);
         localStorage.setItem('hw_dept_name', <?= $deptNameJson ?>);
         localStorage.setItem('hw_expires',   <?= $expiresMsJson ?>);
         localStorage.setItem('hw_is_admin',  <?= $isAdminJson ?> ? '1' : '0');
-        location.replace('/');
+        location.replace('/map');
     </script>
 </body>
 </html>

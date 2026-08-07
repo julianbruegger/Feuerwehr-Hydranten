@@ -33,6 +33,14 @@ jobs:
           DB_USER: ${{ secrets.DB_USER }}
           DB_PASS: ${{ secrets.DB_PASS }}
           ADMIN_PASSWORD_HASH: ${{ secrets.ADMIN_PASSWORD_HASH }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SMTP_SECURE: ${{ secrets.SMTP_SECURE }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          SMTP_FROM_NAME: ${{ secrets.SMTP_FROM_NAME }}
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
         run: |
           {
             echo "<?php"
@@ -44,6 +52,15 @@ jobs:
             printf "define('ADMIN_PASSWORD_HASH', '%s');\n" "$ADMIN_PASSWORD_HASH"
             echo "define('SESSION_LIFETIME',    3600);"
             echo "define('APP_NAME',            'Hydrantennavigator Admin');"
+            # ── Mail (SMTP) — optional. If SMTP_HOST is empty the app logs links to cache/mail.log instead. ──
+            printf "define('SMTP_HOST',           '%s');\n" "$SMTP_HOST"
+            printf "define('SMTP_PORT',           %s);\n"   "${SMTP_PORT:-587}"
+            printf "define('SMTP_USER',           '%s');\n" "$SMTP_USER"
+            printf "define('SMTP_PASS',           '%s');\n" "$SMTP_PASS"
+            printf "define('SMTP_SECURE',         '%s');\n" "${SMTP_SECURE:-tls}"
+            printf "define('SMTP_FROM',           '%s');\n" "$SMTP_FROM"
+            printf "define('SMTP_FROM_NAME',      '%s');\n" "${SMTP_FROM_NAME:-Hydrantennavigator}"
+            printf "define('APP_BASE_URL',        '%s');\n" "$APP_BASE_URL"
           } > config/db.php
 
       - name: Deploy via rsync

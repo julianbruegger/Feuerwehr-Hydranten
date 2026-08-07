@@ -3,17 +3,19 @@
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS fire_departments (
-    id            INT AUTO_INCREMENT PRIMARY KEY,
-    name          VARCHAR(255) NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
-    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+    id                INT AUTO_INCREMENT PRIMARY KEY,
+    name              VARCHAR(255) NOT NULL,
+    email             VARCHAR(255) NULL,
+    email_verified_at DATETIME     NULL,
+    password_hash     VARCHAR(255) NOT NULL,
+    created_at        DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS auth_tokens (
     id              INT AUTO_INCREMENT PRIMARY KEY,
     department_id   INT NULL,
     is_admin        TINYINT(1) NOT NULL DEFAULT 0,
-    source          ENUM('password','magic','admin') NOT NULL DEFAULT 'password',
+    source          ENUM('password','magic','admin','invite','register') NOT NULL DEFAULT 'password',
     label           VARCHAR(255) NULL,
     revoked_at      DATETIME NULL,
     last_seen_at    DATETIME NULL,
@@ -99,6 +101,34 @@ CREATE TABLE IF NOT EXISTS login_log (
     FOREIGN KEY (token_id)      REFERENCES auth_tokens(id)      ON DELETE SET NULL,
     INDEX idx_dept_created (department_id, created_at),
     INDEX idx_created      (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS email_verifications (
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    department_id INT NOT NULL,
+    email         VARCHAR(255) NOT NULL,
+    token         CHAR(64) NOT NULL UNIQUE,
+    expires_at    DATETIME NOT NULL,
+    used_at       DATETIME NULL,
+    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (department_id) REFERENCES fire_departments(id) ON DELETE CASCADE,
+    INDEX idx_token   (token),
+    INDEX idx_expires (expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS invitations (
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    department_id INT NOT NULL,
+    email         VARCHAR(255) NOT NULL,
+    token         CHAR(64) NOT NULL UNIQUE,
+    status        ENUM('pending','accepted','revoked') NOT NULL DEFAULT 'pending',
+    created_by    INT NULL,
+    expires_at    DATETIME NOT NULL,
+    accepted_at   DATETIME NULL,
+    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (department_id) REFERENCES fire_departments(id) ON DELETE CASCADE,
+    INDEX idx_token (token),
+    INDEX idx_dept  (department_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Test data: one fire department (password: test123)
