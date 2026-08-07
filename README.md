@@ -15,7 +15,7 @@
 - **📱 Mobile / PWA-friendly** — Optimised for use on a phone in the field; installable to the home screen.
 - **🍏 Apple Shortcut & Siri integration** — A REST endpoint returns a ready-to-speak summary so you can ask Siri for the number of hoses hands-free (see [`SHORTCUT.md`](SHORTCUT.md)).
 - **🌐 Bilingual landing page (DE / EN)** — A public page at `/` explains the project and its features, with a language toggle. The map itself lives at **`/map`**.
-- **✉️ Self-service onboarding** — A fire department can **register** (email + password, confirmed by a verification e-mail) or a member can **be invited** into an existing department via an emailed magic-login link. E-mail is sent over SMTP (see below).
+- **✉️ Self-service onboarding** — You **register as a person** (name + email + password, confirmed by a verification e-mail), then either **create a fire department** (you become its owner) or **join an existing one** with an invite code. Departments can invite members by e-mail. Login is by e-mail; mail is sent over SMTP (see below).
 - **⚡ Power-supply map** — Separate view for transformer stations and substations, useful for coordinating with the grid operator during an incident.
 - **🔒 Admin panel** (per fire department, password-protected):
   - **Sensitive entries** — Notes for keys/access, hazardous materials, building info and contacts, pinned to the map.
@@ -46,8 +46,9 @@
 ├── map.html              # Hydrant navigator map (served at /map)
 ├── app.js                # Map, geolocation, hydrant fetch & hose logic
 ├── i18n.js               # Shared DE/EN dictionary + toggle
-├── register.html         # Create a fire department (self-service)
+├── register.html         # Create a personal account (self-service)
 ├── verify-email.php      # E-mail verification landing
+├── onboarding.html       # After verify: create or join a department
 ├── stromversorgung.html  # Power-supply (transformer/substation) map
 ├── stromversorgung.js
 ├── info.html             # In-app help / instructions
@@ -92,7 +93,8 @@ The backend is written for PHP shared hosting and needs no server management:
 1. Upload the project files to your webspace.
 2. Create the database and run the SQL in [`config/`](config/) (via phpMyAdmin):
    - `schema.sql`, then any relevant `schema_*.sql` and `migration_*.sql` (including
-     [`migration_v4.sql`](config/migration_v4.sql) for the e-mail onboarding tables).
+     [`migration_v4.sql`](config/migration_v4.sql) for the e-mail onboarding tables and
+     [`migration_v5.sql`](config/migration_v5.sql) for personal accounts + memberships).
 3. Create `config/db.php` with your database credentials (and SMTP settings, see below).
 4. Ensure `cURL` is enabled (default on Hostpoint) — it's used for Overpass/OSRM requests.
 

@@ -15,17 +15,17 @@ require_once __DIR__ . '/config/auth_helper.php';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     header('Content-Type: application/json; charset=utf-8');
 
-    // Eingaben aus JSON-Body lesen
-    $body = json_decode(file_get_contents('php://input'), true);
-    $name = trim($body['name'] ?? '');
-    $pass = trim($body['password'] ?? '');
+    // Eingaben aus JSON-Body lesen (E-Mail ist die Login-Identität)
+    $body  = json_decode(file_get_contents('php://input'), true);
+    $email = strtolower(trim($body['email'] ?? $body['name'] ?? ''));
+    $pass  = trim($body['password'] ?? '');
 
-    if ($name === '' || $pass === '') {
-        jsonResponse(['error' => 'Name und Passwort erforderlich'], 400);
+    if ($email === '' || $pass === '') {
+        jsonResponse(['error' => 'E-Mail und Passwort erforderlich'], 400);
     }
 
     // Admin login — uses ADMIN_PASSWORD_HASH constant from config/db.php
-    if (strtolower($name) === 'admin') {
+    if ($email === 'admin') {
         if (!defined('ADMIN_PASSWORD_HASH') || !password_verify($pass, ADMIN_PASSWORD_HASH)) {
             sleep(1);
             jsonResponse(['error' => 'Ungültige Anmeldedaten'], 401);
@@ -36,30 +36,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'token'      => $rec['token'],
             'expires_in' => 365 * 24 * 3600,
             'dept_name'  => 'Admin',
+            'user_name'  => 'Admin',
             'is_admin'   => true,
+            'has_dept'   => true,
+            'redirect'   => '/admin/',
         ]);
     }
 
     $db = getDb();
-    $stmt = $db->prepare('SELECT id, password_hash FROM fire_departments WHERE name = ? LIMIT 1');
-    $stmt->execute([$name]);
-    $dept = $stmt->fetch();
+    $stmt = $db->prepare('SELECT id, name, password_hash, email_verified_at FROM users WHERE email = ? LIMIT 1');
+    $stmt->execute([$email]);
+    $user = $stmt->fetch();
 
     // Timing-sicherer Vergleich (verhindert User-Enumeration)
-    $valid = $dept && password_verify($pass, $dept['password_hash']);
+    $hashToCheck = $user['password_hash'] ?? '$2y$10$invalidhashfortimingprotection00000000000000000000000';
+    $valid = $user && password_verify($pass, $hashToCheck);
 
     if (!$valid) {
-        // Kurze Pause verhindert Brute-Force
         sleep(1);
         jsonResponse(['error' => 'Ungültige Anmeldedaten'], 401);
     }
+    if (empty($user['email_verified_at'])) {
+        jsonResponse(['error' => 'Bitte bestätige zuerst deine E-Mail-Adresse.'], 403);
+    }
 
-    $rec = createToken((int) $dept['id'], false, 'password');
-    logLogin((int) $dept['id'], $rec['id'], false, 'password');
+    // Aktive Feuerwehr = neueste Mitgliedschaft (falls vorhanden)
+    $mStmt = $db->prepare(
+        'SELECT m.department_id, d.name AS dept_name
+         FROM memberships m JOIN fire_departments d ON d.id = m.department_id
+         WHERE m.user_id = ? ORDER BY m.created_at DESC LIMIT 1'
+    );
+    $mStmt->execute([(int) $user['id']]);
+    $mem = $mStmt->fetch();
+
+    $deptId   = $mem ? (int) $mem['department_id'] : null;
+    $deptName = $mem ? $mem['dept_name'] : $user['name'];
+
+    $rec = createToken($deptId, false, 'password', null, null, (int) $user['id']);
+    logLogin($deptId, $rec['id'], false, 'password');
     jsonResponse([
         'token'      => $rec['token'],
         'expires_in' => 365 * 24 * 3600,
-        'dept_name'  => $name,
+        'dept_name'  => $deptName,
+        'user_name'  => $user['name'],
+        'has_dept'   => (bool) $mem,
+        'redirect'   => $mem ? '/admin/' : '/onboarding.html',
     ]);
 }
 
@@ -228,8 +249,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <form id="loginForm" autocomplete="on">
             <div class="field">
-                <label for="name" data-i18n="login.dept">Feuerwehr</label>
-                <input type="text" id="name" name="username" placeholder="z.B. FW Luzern" autocomplete="username"
+                <label for="email" data-i18n="login.email">E-Mail</label>
+                <input type="email" id="email" name="email" placeholder="du@feuerwehr.ch" autocomplete="username email"
                     required />
             </div>
             <div class="field">
@@ -250,10 +271,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <script src="/i18n.js"></script>
     <script>
-        // Bereits eingeloggt? → direkt zum Admin-Panel
+        // Bereits eingeloggt? → zum Admin-Panel, oder zum Onboarding wenn noch keine Feuerwehr
         const cached = localStorage.getItem('hw_token');
         if (cached) {
-            window.location.href = '/admin/';
+            const hasDept = localStorage.getItem('hw_has_dept') === '1'
+                || localStorage.getItem('hw_is_admin') === '1';
+            window.location.href = hasDept ? '/admin/' : '/onboarding.html';
         }
 
         document.getElementById('loginForm').addEventListener('submit', async (e) => {
@@ -269,7 +292,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        name: document.getElementById('name').value.trim(),
+                        email: document.getElementById('email').value.trim(),
                         password: document.getElementById('password').value,
                     }),
                 });
@@ -284,10 +307,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Token für 365 Tage im localStorage speichern
                 localStorage.setItem('hw_token', data.token);
                 localStorage.setItem('hw_dept_name', data.dept_name);
+                localStorage.setItem('hw_user_name', data.user_name || data.dept_name);
                 localStorage.setItem('hw_expires', Date.now() + data.expires_in * 1000);
                 localStorage.setItem('hw_is_admin', data.is_admin ? '1' : '0');
+                localStorage.setItem('hw_has_dept', data.has_dept ? '1' : '0');
 
-                window.location.href = '/admin/';
+                window.location.href = data.redirect || '/admin/';
             } catch {
                 err.textContent = 'Serverfehler – bitte erneut versuchen';
                 err.style.display = 'block';

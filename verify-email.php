@@ -1,10 +1,10 @@
 <?php
 /**
- * verify-email.php – Confirms a department's e-mail address.
+ * verify-email.php – Confirms a user's e-mail address.
  *
- * GET ?t=<token> → validates the verification token, marks the department
- * verified, issues a long-lived auth token, stores it in localStorage and
- * redirects to the admin panel. Mirrors magic-login.php's client pattern.
+ * GET ?t=<token> → validates the verification token, marks the user verified,
+ * issues a long-lived auth token, stores it in localStorage and redirects to
+ * onboarding (or straight to /admin/ if the user already has a department).
  */
 require_once __DIR__ . '/config/auth_helper.php';
 
@@ -48,8 +48,8 @@ if (!preg_match('/^[a-f0-9]{64}$/', $token)) {
 
 $db = getDb();
 $stmt = $db->prepare(
-    'SELECT id, department_id, email FROM email_verifications
-     WHERE token = ? AND used_at IS NULL AND expires_at > NOW() LIMIT 1'
+    'SELECT id, user_id, email FROM email_verifications
+     WHERE token = ? AND used_at IS NULL AND expires_at > NOW() AND user_id IS NOT NULL LIMIT 1'
 );
 $stmt->execute([$token]);
 $row = $stmt->fetch();
@@ -58,26 +58,40 @@ if (!$row) {
     verifyErrorPage('Dieser Bestätigungslink ist ungültig oder abgelaufen.');
 }
 
-$deptId = (int) $row['department_id'];
+$userId = (int) $row['user_id'];
 
-// Mark verification used + department verified (idempotent-safe).
+// Mark verification used + user verified (idempotent-safe).
 $db->prepare('UPDATE email_verifications SET used_at = NOW() WHERE id = ?')->execute([$row['id']]);
-$db->prepare('UPDATE fire_departments SET email_verified_at = NOW() WHERE id = ? AND email_verified_at IS NULL')
-   ->execute([$deptId]);
+$db->prepare('UPDATE users SET email_verified_at = NOW() WHERE id = ? AND email_verified_at IS NULL')
+   ->execute([$userId]);
 
-// Resolve name + issue a login token.
-$nameStmt = $db->prepare('SELECT name FROM fire_departments WHERE id = ? LIMIT 1');
-$nameStmt->execute([$deptId]);
-$deptName = $nameStmt->fetchColumn() ?: 'Feuerwehr';
+// Resolve the user's name + any existing membership (newest wins).
+$uStmt = $db->prepare('SELECT name FROM users WHERE id = ? LIMIT 1');
+$uStmt->execute([$userId]);
+$userName = $uStmt->fetchColumn() ?: 'Benutzer';
 
-$rec = createToken($deptId, false, 'register');
+$mStmt = $db->prepare(
+    'SELECT m.department_id, d.name AS dept_name
+     FROM memberships m JOIN fire_departments d ON d.id = m.department_id
+     WHERE m.user_id = ? ORDER BY m.created_at DESC LIMIT 1'
+);
+$mStmt->execute([$userId]);
+$membership = $mStmt->fetch();
+
+$deptId   = $membership ? (int) $membership['department_id'] : null;
+$deptName = $membership ? $membership['dept_name'] : $userName;
+
+$rec = createToken($deptId, false, 'register', null, null, $userId);
 logLogin($deptId, $rec['id'], false, 'register');
 
 $expiresMs = (time() + 365 * 24 * 3600) * 1000;
+$redirect  = $membership ? '/admin/' : '/onboarding.html';
 
 $tokenJson     = json_encode($rec['token']);
 $deptNameJson  = json_encode($deptName);
+$userNameJson  = json_encode($userName);
 $expiresMsJson = json_encode($expiresMs);
+$redirectJson  = json_encode($redirect);
 ?>
 <!DOCTYPE html>
 <html lang="de">
@@ -99,15 +113,16 @@ $expiresMsJson = json_encode($expiresMs);
 <body>
     <div class="msg">
         <div class="check">✅</div>
-        <div>E-Mail bestätigt – du wirst angemeldet…</div>
+        <div>E-Mail bestätigt…</div>
         <div class="spinner"></div>
     </div>
     <script>
         localStorage.setItem('hw_token',     <?= $tokenJson ?>);
+        localStorage.setItem('hw_user_name', <?= $userNameJson ?>);
         localStorage.setItem('hw_dept_name', <?= $deptNameJson ?>);
         localStorage.setItem('hw_expires',   <?= $expiresMsJson ?>);
         localStorage.setItem('hw_is_admin',  '0');
-        setTimeout(function () { location.replace('/admin/'); }, 800);
+        setTimeout(function () { location.replace(<?= $redirectJson ?>); }, 800);
     </script>
 </body>
 </html>
