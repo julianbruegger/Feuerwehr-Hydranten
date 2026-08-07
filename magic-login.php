@@ -39,6 +39,7 @@ logLogin($auth['dept_id'], $auth['token_id'], (bool) $auth['is_admin'], 'magic')
 $tokenJson     = json_encode($token);
 $deptNameJson  = json_encode($deptName);
 $isAdminJson   = $auth['is_admin'] ? 'true' : 'false';
+$hasDeptJson   = ($auth['dept_id'] !== null || $auth['is_admin']) ? 'true' : 'false';
 $expiresMsJson = json_encode($expiresMs);
 ?>
 <!DOCTYPE html>
@@ -81,6 +82,7 @@ $expiresMsJson = json_encode($expiresMs);
         localStorage.setItem('hw_dept_name', <?= $deptNameJson ?>);
         localStorage.setItem('hw_expires',   <?= $expiresMsJson ?>);
         localStorage.setItem('hw_is_admin',  <?= $isAdminJson ?> ? '1' : '0');
+        localStorage.setItem('hw_has_dept',  <?= $hasDeptJson ?> ? '1' : '0');
         location.replace('/map');
     </script>
 </body>

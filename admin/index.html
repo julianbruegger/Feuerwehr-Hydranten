@@ -817,8 +817,8 @@
                 <span class="toolbar__title">Mitglied einladen</span>
             </div>
             <p style="color:var(--muted);font-size:14px;line-height:1.6;margin-bottom:16px">
-                Lade eine Person per E-Mail zu deiner Feuerwehr ein. Sie erhält einen Anmeldelink,
-                der sie direkt auf diesem Konto anmeldet.
+                Lade eine Person per E-Mail zu deiner Feuerwehr ein. Sie erhält einen Einladungslink:
+                nach Registrierung bzw. Anmeldung tritt sie damit dieser Feuerwehr bei.
             </p>
             <div class="ml-form">
                 <div>
@@ -950,16 +950,21 @@
         const deptName = localStorage.getItem('hw_dept_name') || 'Feuerwehr';
         const expires = parseInt(localStorage.getItem('hw_expires') || '0', 10);
         const isAdmin = localStorage.getItem('hw_is_admin') === '1';
+        const hasDept = localStorage.getItem('hw_has_dept') === '1';
 
         function clearAuth() {
             localStorage.removeItem('hw_token');
             localStorage.removeItem('hw_dept_name');
+            localStorage.removeItem('hw_user_name');
             localStorage.removeItem('hw_expires');
             localStorage.removeItem('hw_is_admin');
+            localStorage.removeItem('hw_has_dept');
             window.location.href = '/login.php';
         }
 
         if (!token || Date.now() > expires) clearAuth();
+        // A user who hasn't created or joined a department yet → onboarding.
+        else if (!isAdmin && !hasDept) window.location.href = '/onboarding.html';
 
         // ─── Cached DOM refs ──────────────────────────────────────────────────
         const $deptName = document.getElementById('deptName');
