@@ -104,14 +104,17 @@ repository's *Settings → Secrets and variables → Actions*:
 
 | Secret | Example | Notes |
 |---|---|---|
-| `SMTP_HOST` | `smtp.hostpoint.ch` | Leave unset to disable sending (links are logged to `cache/mail.log` instead). |
-| `SMTP_PORT` | `587` | Defaults to `587`. |
-| `SMTP_USER` | `noreply@your-domain.ch` | SMTP username. |
-| `SMTP_PASS` | `…` | SMTP password. |
-| `SMTP_SECURE` | `tls` | `tls` (STARTTLS, port 587) or `ssl` (port 465). Defaults to `tls`. |
-| `SMTP_FROM` | `noreply@your-domain.ch` | Envelope/From address. |
-| `SMTP_FROM_NAME` | `Hydrantennavigator` | Display name. |
-| `APP_BASE_URL` | `https://feuerwehr.example.ch` | Used to build links in e-mails. |
+| `MAIL_HOST` | `smtp.hostpoint.ch` | **Required to send.** Leave unset to disable sending (links are logged to `cache/mail.log` instead). |
+| `MAIL_USER` | `noreply@your-domain.ch` | SMTP username. |
+| `MAIL_PASS` | `…` | SMTP password. |
+| `SMTP_PORT` | `587` | Optional. Defaults to `587`. |
+| `SMTP_SECURE` | `tls` | Optional. `tls` (STARTTLS, port 587) or `ssl` (port 465). Defaults to `tls`. |
+| `SMTP_FROM` | `noreply@your-domain.ch` | Optional. From address; defaults to `MAIL_USER`. |
+| `SMTP_FROM_NAME` | `Hydrantennavigator` | Optional. Display name. |
+| `APP_BASE_URL` | `https://feuerwehr.example.ch` | Optional. Link base; defaults to the production domain. |
+
+> The three `MAIL_*` secrets are all you need to start sending. `SMTP_HOST` / `SMTP_USER` /
+> `SMTP_PASS` are also accepted as fallback names.
 
 Locally (Docker), SMTP is left empty on purpose — the mailer writes verification and
 invitation links to `cache/mail.log`, and the register/invite responses also return the
