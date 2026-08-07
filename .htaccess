@@ -8,11 +8,16 @@ RewriteRule ^ - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 RewriteRule ^api/login$             php/api/login.php             [L]
 RewriteRule ^api/logout$            php/api/logout.php            [L]
 RewriteRule ^api/hoses$             php/api/hoses.php             [L,QSA]
+RewriteRule ^api/register$          php/api/register.php          [L,QSA]
 RewriteRule ^admin/api/notes$       php/admin/api/notes.php       [L,QSA]
 RewriteRule ^admin/api/substations$ php/admin/api/substations.php [L,QSA]
 RewriteRule ^admin/api/wtp$         php/admin/api/wtp.php         [L,QSA]
+RewriteRule ^admin/api/invite$      php/admin/api/invite.php      [L,QSA]
 
-# SPA fallback — any path that isn't a real file serves index.html
+# Clean URL for the map (the app itself lives in map.html)
+RewriteRule ^map/?$                 map.html                     [L,QSA]
+
+# SPA fallback — any path that isn't a real file serves index.html (landing page)
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^ index.html [L]

@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0f0f14" />
+  <title>🚒 Feuerwehr registrieren – Hydrantennavigator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0f0f14;
+      --surface: #18181f;
+      --card: #22222d;
+      --red: #e63946;
+      --green: #4ade80;
+      --text: #f1f1f5;
+      --muted: #8a8a9a;
+      --border: rgba(255, 255, 255, 0.08);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100dvh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .lang-toggle {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font: 600 13px 'Inter', sans-serif;
+      padding: 8px 13px;
+      border-radius: 999px;
+      cursor: pointer;
+    }
+    .lang-toggle:hover { color: var(--text); }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 36px 28px;
+      width: 100%;
+      max-width: 400px;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+    }
+
+    .logo { text-align: center; font-size: 44px; margin-bottom: 8px; }
+    .title { text-align: center; font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+    .sub { text-align: center; font-size: 13px; color: var(--muted); margin-bottom: 28px; }
+
+    .field { margin-bottom: 16px; }
+    label {
+      display: block; font-size: 12px; font-weight: 600; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;
+    }
+    input {
+      width: 100%; background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; color: var(--text); font: 400 16px 'Inter', sans-serif;
+      padding: 13px 16px; outline: none; transition: border-color 0.2s;
+    }
+    input:focus { border-color: var(--red); }
+
+    .btn {
+      width: 100%; margin-top: 8px; padding: 14px; background: var(--red);
+      color: #fff; border: none; border-radius: 12px; font: 700 16px 'Inter', sans-serif;
+      cursor: pointer; transition: opacity 0.2s, transform 0.15s;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .msg {
+      border-radius: 10px; padding: 10px 14px; font-size: 13px; margin-top: 14px; display: none;
+    }
+    .msg.error { background: rgba(230, 57, 70, 0.12); border: 1px solid var(--red); color: var(--red); }
+    .msg.ok { background: rgba(74, 222, 128, 0.1); border: 1px solid var(--green); color: var(--green); }
+    .msg.dev {
+      background: rgba(244, 162, 97, 0.1); border: 1px solid #f4a261; color: #f4a261;
+      word-break: break-all; font-family: monospace; margin-top: 10px;
+    }
+    .msg.dev a { color: #f4a261; }
+
+    .foot { text-align: center; margin-top: 20px; font-size: 13px; color: var(--muted); }
+    .foot a { color: var(--text); text-decoration: none; font-weight: 600; }
+    .map-link { display: block; text-align: center; margin-top: 14px; font-size: 13px; color: var(--muted); text-decoration: none; }
+    .map-link:hover { color: var(--text); }
+  </style>
+</head>
+
+<body>
+  <button class="lang-toggle" data-lang-toggle aria-label="Sprache wechseln / Switch language">
+    <span data-lang-label>EN</span>
+  </button>
+
+  <div class="card">
+    <div class="logo">🚒</div>
+    <div class="title" data-i18n="reg.title">Feuerwehr registrieren</div>
+    <div class="sub" data-i18n="reg.sub">Erstelle ein Konto für deine Feuerwehr</div>
+
+    <form id="registerForm" autocomplete="on">
+      <div class="field">
+        <label for="name" data-i18n="reg.name">Name der Feuerwehr</label>
+        <input type="text" id="name" name="organization" data-i18n-attr="placeholder:reg.namePh" required />
+      </div>
+      <div class="field">
+        <label for="email" data-i18n="reg.email">E-Mail</label>
+        <input type="email" id="email" name="email" autocomplete="email"
+          data-i18n-attr="placeholder:reg.emailPh" required />
+      </div>
+      <div class="field">
+        <label for="password" data-i18n="reg.password">Passwort</label>
+        <input type="password" id="password" name="new-password" autocomplete="new-password" minlength="8"
+          data-i18n-attr="placeholder:reg.passwordPh" required />
+      </div>
+      <button type="submit" class="btn" id="submitBtn" data-i18n="reg.submit">Registrieren</button>
+    </form>
+
+    <div class="msg error" id="errorMsg"></div>
+    <div class="msg ok" id="okMsg"></div>
+    <div class="msg dev" id="devMsg"></div>
+
+    <div class="foot">
+      <span data-i18n="reg.haveAccount">Bereits registriert?</span>
+      <a href="/login.php" data-i18n="reg.loginLink">Anmelden</a>
+    </div>
+    <a href="/map" class="map-link" data-i18n="reg.backMap">← Zur Karte</a>
+  </div>
+
+  <script src="/i18n.js"></script>
+  <script>
+    const form = document.getElementById('registerForm');
+    const btn = document.getElementById('submitBtn');
+    const errorMsg = document.getElementById('errorMsg');
+    const okMsg = document.getElementById('okMsg');
+    const devMsg = document.getElementById('devMsg');
+    const T = (k) => window.I18N.t(k);
+
+    function show(el, text) { el.textContent = text; el.style.display = 'block'; }
+    function hideAll() { [errorMsg, okMsg, devMsg].forEach((e) => { e.style.display = 'none'; }); }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideAll();
+
+      const name = document.getElementById('name').value.trim();
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+
+      if (!name || !email || !password) { show(errorMsg, T('reg.errFields')); return; }
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { show(errorMsg, T('reg.errEmail')); return; }
+      if (password.length < 8) { show(errorMsg, T('reg.errPassword')); return; }
+
+      btn.disabled = true;
+      btn.textContent = T('reg.submitting');
+
+      try {
+        const res = await fetch('/api/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, email, password }),
+        });
+        const data = await res.json();
+
+        if (!res.ok) { show(errorMsg, data.error || T('reg.errGeneric')); return; }
+
+        form.style.display = 'none';
+        show(okMsg, T('reg.successTitle') + ' ' + T('reg.successBody'));
+        if (data.dev_link) {
+          devMsg.innerHTML = T('reg.devLink') + '<br><a href="' + data.dev_link + '">' + data.dev_link + '</a>';
+          devMsg.style.display = 'block';
+        }
+      } catch {
+        show(errorMsg, T('reg.errGeneric'));
+      } finally {
+        btn.disabled = false;
+        btn.textContent = T('reg.submit');
+      }
+    });
+  </script>
+</body>
+
+</html>

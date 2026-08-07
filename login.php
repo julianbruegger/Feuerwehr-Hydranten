@@ -216,28 +216,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 
 <body>
+    <button data-lang-toggle aria-label="Sprache wechseln / Switch language"
+        style="position:fixed;top:16px;right:16px;background:var(--card);border:1px solid var(--border);color:var(--muted);font:600 13px 'Inter',sans-serif;padding:8px 13px;border-radius:999px;cursor:pointer">
+        <span data-lang-label>EN</span>
+    </button>
+
     <div class="login-card">
         <div class="login-logo">🚒</div>
-        <div class="login-title">Feuerwehr-Anmeldung</div>
-        <div class="login-sub">Nur für autorisiertes Personal</div>
+        <div class="login-title" data-i18n="login.title">Feuerwehr-Anmeldung</div>
+        <div class="login-sub" data-i18n="login.sub">Nur für autorisiertes Personal</div>
 
         <form id="loginForm" autocomplete="on">
             <div class="field">
-                <label for="name">Feuerwehr</label>
+                <label for="name" data-i18n="login.dept">Feuerwehr</label>
                 <input type="text" id="name" name="username" placeholder="z.B. FW Luzern" autocomplete="username"
                     required />
             </div>
             <div class="field">
-                <label for="password">Passwort</label>
+                <label for="password" data-i18n="login.password">Passwort</label>
                 <input type="password" id="password" name="password" autocomplete="current-password" required />
             </div>
-            <button type="submit" class="btn" id="loginBtn">Anmelden</button>
+            <button type="submit" class="btn" id="loginBtn" data-i18n="login.submit">Anmelden</button>
             <div class="error" id="errorMsg"></div>
         </form>
 
-        <a href="/" class="map-link">← Zurück zur Karte</a>
+        <div style="text-align:center;margin-top:20px;font-size:13px;color:var(--muted)">
+            <span data-i18n="login.noAccount">Noch keine Feuerwehr?</span>
+            <a href="/register.html" style="color:var(--text);text-decoration:none;font-weight:600"
+                data-i18n="login.registerLink">Registrieren</a>
+        </div>
+        <a href="/map" class="map-link" data-i18n="login.backMap">← Zurück zur Karte</a>
     </div>
 
+    <script src="/i18n.js"></script>
     <script>
         // Bereits eingeloggt? → direkt zum Admin-Panel
         const cached = localStorage.getItem('hw_token');
@@ -250,7 +261,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             const btn = document.getElementById('loginBtn');
             const err = document.getElementById('errorMsg');
             btn.disabled = true;
-            btn.textContent = 'Anmelden…';
+            btn.textContent = window.I18N ? I18N.t('login.submitting') : 'Anmelden…';
             err.style.display = 'none';
 
             try {
@@ -282,7 +293,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 err.style.display = 'block';
             } finally {
                 btn.disabled = false;
-                btn.textContent = 'Anmelden';
+                btn.textContent = window.I18N ? I18N.t('login.submit') : 'Anmelden';
             }
         });
     </script>

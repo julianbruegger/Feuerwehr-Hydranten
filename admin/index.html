@@ -756,6 +756,7 @@
     <!-- Tab navigation -->
     <nav class="tab-bar" id="tabBar">
         <button class="tab-btn active" data-tab="eintraege">Einträge</button>
+        <button class="tab-btn" data-tab="einladen">Einladen</button>
         <button class="tab-btn tab-admin hidden" data-tab="magic">Magic-Links</button>
         <button class="tab-btn tab-admin hidden" data-tab="logins">Logins</button>
     </nav>
@@ -806,6 +807,35 @@
                 <div class="empty">
                     <div class="empty-icon">⏳</div>
                     <p>Lade Einträge…</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ─── Panel: Einladen ─── -->
+        <div id="panelEinladen" class="panel hidden">
+            <div class="toolbar">
+                <span class="toolbar__title">Mitglied einladen</span>
+            </div>
+            <p style="color:var(--muted);font-size:14px;line-height:1.6;margin-bottom:16px">
+                Lade eine Person per E-Mail zu deiner Feuerwehr ein. Sie erhält einen Anmeldelink,
+                der sie direkt auf diesem Konto anmeldet.
+            </p>
+            <div class="ml-form">
+                <div>
+                    <label class="form-label" for="inviteEmail">E-Mail-Adresse</label>
+                    <input class="form-input" type="email" id="inviteEmail" placeholder="person@feuerwehr.ch"
+                        autocomplete="email" />
+                </div>
+                <button class="btn-primary" id="btnInvite" style="align-self:flex-start">
+                    Einladung senden
+                </button>
+            </div>
+
+            <div id="inviteResult" class="ml-result hidden">
+                <div class="ml-result-label" id="inviteResultLabel">Einladung gesendet</div>
+                <div class="ml-url-row" id="inviteUrlRow" style="display:none">
+                    <span class="ml-url" id="inviteUrl"></span>
+                    <button class="btn-copy" id="btnCopyInvite">Kopieren</button>
                 </div>
             </div>
         </div>
@@ -1194,6 +1224,54 @@
                 return null;
             }
         }
+
+        // ─── Einladen (Invite) ────────────────────────────────────────────────
+        document.getElementById('btnInvite').addEventListener('click', async () => {
+            const input = document.getElementById('inviteEmail');
+            const email = input.value.trim();
+            const btn = document.getElementById('btnInvite');
+            const result = document.getElementById('inviteResult');
+            const urlRow = document.getElementById('inviteUrlRow');
+            const label = document.getElementById('inviteResultLabel');
+
+            if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+                alert('Bitte eine gültige E-Mail-Adresse eingeben.');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = 'Senden…';
+            result.classList.add('hidden');
+            urlRow.style.display = 'none';
+
+            const data = await callEndpoint('/admin/api/invite', 'POST', { email });
+
+            btn.disabled = false;
+            btn.textContent = 'Einladung senden';
+
+            if (!data || !data.ok) return;
+
+            input.value = '';
+            label.textContent = data.warning
+                ? ('⚠️ ' + data.warning)
+                : ('✅ Einladung an ' + email + ' gesendet.');
+            result.classList.remove('hidden');
+
+            if (data.dev_link) {
+                // Dev mode: no real e-mail sent → show the link to copy/share.
+                label.textContent = 'Einladung erstellt (Entwicklungsmodus – Link teilen):';
+                document.getElementById('inviteUrl').textContent = data.dev_link;
+                urlRow.style.display = 'flex';
+            }
+        });
+
+        document.getElementById('btnCopyInvite').addEventListener('click', () => {
+            const url = document.getElementById('inviteUrl').textContent;
+            navigator.clipboard?.writeText(url);
+            const b = document.getElementById('btnCopyInvite');
+            b.textContent = 'Kopiert!';
+            setTimeout(() => { b.textContent = 'Kopieren'; }, 1500);
+        });
 
         // ─── Magic-Links ─────────────────────────────────────────────────────
         function sourceBadge(src) {

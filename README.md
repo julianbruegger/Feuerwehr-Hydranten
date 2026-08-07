@@ -14,6 +14,8 @@
 - **⚙️ Configurable** — Adjustable hose length (e.g. 20 m / 25 m) and search radius via a swipe-up bottom sheet.
 - **📱 Mobile / PWA-friendly** — Optimised for use on a phone in the field; installable to the home screen.
 - **🍏 Apple Shortcut & Siri integration** — A REST endpoint returns a ready-to-speak summary so you can ask Siri for the number of hoses hands-free (see [`SHORTCUT.md`](SHORTCUT.md)).
+- **🌐 Bilingual landing page (DE / EN)** — A public page at `/` explains the project and its features, with a language toggle. The map itself lives at **`/map`**.
+- **✉️ Self-service onboarding** — A fire department can **register** (email + password, confirmed by a verification e-mail) or a member can **be invited** into an existing department via an emailed magic-login link. E-mail is sent over SMTP (see below).
 - **⚡ Power-supply map** — Separate view for transformer stations and substations, useful for coordinating with the grid operator during an incident.
 - **🔒 Admin panel** (per fire department, password-protected):
   - **Sensitive entries** — Notes for keys/access, hazardous materials, building info and contacts, pinned to the map.
@@ -40,8 +42,12 @@
 
 ```
 .
-├── index.html            # Main hydrant navigator (SPA entry)
+├── index.html            # Public landing / explainer page (DE + EN)
+├── map.html              # Hydrant navigator map (served at /map)
 ├── app.js                # Map, geolocation, hydrant fetch & hose logic
+├── i18n.js               # Shared DE/EN dictionary + toggle
+├── register.html         # Create a fire department (self-service)
+├── verify-email.php      # E-mail verification landing
 ├── stromversorgung.html  # Power-supply (transformer/substation) map
 ├── stromversorgung.js
 ├── info.html             # In-app help / instructions
@@ -85,9 +91,34 @@ The backend is written for PHP shared hosting and needs no server management:
 
 1. Upload the project files to your webspace.
 2. Create the database and run the SQL in [`config/`](config/) (via phpMyAdmin):
-   - `schema.sql`, then any relevant `schema_*.sql` and `migration_*.sql`.
-3. Create `config/db.php` with your database credentials.
+   - `schema.sql`, then any relevant `schema_*.sql` and `migration_*.sql` (including
+     [`migration_v4.sql`](config/migration_v4.sql) for the e-mail onboarding tables).
+3. Create `config/db.php` with your database credentials (and SMTP settings, see below).
 4. Ensure `cURL` is enabled (default on Hostpoint) — it's used for Overpass/OSRM requests.
+
+### 📧 E-mail (SMTP) configuration
+
+Registration and invitations send e-mail via SMTP. The deploy workflow writes these
+constants into `config/db.php` from GitHub **Actions secrets** — set them under the
+repository's *Settings → Secrets and variables → Actions*:
+
+| Secret | Example | Notes |
+|---|---|---|
+| `MAIL_HOST` | `smtp.hostpoint.ch` | **Required to send.** Leave unset to disable sending (links are logged to `cache/mail.log` instead). |
+| `MAIL_USER` | `noreply@your-domain.ch` | SMTP username. |
+| `MAIL_PASS` | `…` | SMTP password. |
+| `SMTP_PORT` | `587` | Optional. Defaults to `587`. |
+| `SMTP_SECURE` | `tls` | Optional. `tls` (STARTTLS, port 587) or `ssl` (port 465). Defaults to `tls`. |
+| `SMTP_FROM` | `noreply@your-domain.ch` | Optional. From address; defaults to `MAIL_USER`. |
+| `SMTP_FROM_NAME` | `Hydrantennavigator` | Optional. Display name. |
+| `APP_BASE_URL` | `https://feuerwehr.example.ch` | Optional. Link base; defaults to the production domain. |
+
+> The three `MAIL_*` secrets are all you need to start sending. `SMTP_HOST` / `SMTP_USER` /
+> `SMTP_PASS` are also accepted as fallback names.
+
+Locally (Docker), SMTP is left empty on purpose — the mailer writes verification and
+invitation links to `cache/mail.log`, and the register/invite responses also return the
+link directly, so the whole flow is testable without a mail server.
 
 The public hose API is then reachable at:
 

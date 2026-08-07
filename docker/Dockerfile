@@ -10,3 +10,9 @@ RUN a2enmod rewrite
 RUN mkdir -p /var/www/html/uploads/wtp && chmod 777 /var/www/html/uploads/wtp
 
 COPY apache.conf /etc/apache2/sites-available/000-default.conf
+
+# Generate config/db.php from env on first start (dev only), then run Apache.
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["apache2-foreground"]
