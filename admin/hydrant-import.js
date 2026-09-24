@@ -54,9 +54,28 @@
 
     // ── Attribute ──────────────────────────────────────────────────────────
 
+    /**
+     * Codes "HYD_ART" aus SIA405_Wasser_2015 (Geodatenshop Kanton Luzern, WIWASHYD).
+     * null = kein Löschwasser-Hydrant (Sprinkler, Schneeanlage, …) → nicht importieren.
+     */
+    const HYD_ART_CODES = {
+        1: 'pillar', 2: 'pillar', 3: 'pillar', 4: 'pillar', 5: 'pillar',   // Oberflurhydrant
+        6: 'underground', 7: 'underground', 8: 'underground', 9: 'underground', // Unterflurhydrant
+        11: 'other',  // Industriehydrant
+        99: 'other',  // unbekannt
+        10: null,     // Gartenhydrant
+        12: null,     // Feuerkopf
+        13: null,     // Feuervorhang
+        14: null,     // Sprinkler
+        15: null,     // Schneeanlage
+    };
+
+    /** Liefert den Typ, oder null wenn das Objekt kein Löschwasser-Hydrant ist. */
     function mapType(v) {
-        const s = String(v || '').toLowerCase();
+        const s = String(v ?? '').trim().toLowerCase();
         if (!s) return 'other';
+        if (/^\d+$/.test(s)) return Object.prototype.hasOwnProperty.call(HYD_ART_CODES, s) ? HYD_ART_CODES[s] : 'other';
+        if (/garten|sprinkler|schnee|feuervorhang|feuerkopf/.test(s)) return null;
         if (/ober|über|ueber|pillar|säule|saeule/.test(s)) return 'pillar';
         if (/unter|underground/.test(s)) return 'underground';
         if (/wand|wall/.test(s)) return 'wall';
@@ -66,7 +85,7 @@
 
     /** Ausser Betrieb / aufgehoben → nicht importieren (wäre im Einsatz irreführend). */
     function isOutOfService(v) {
-        return /aufgehoben|stillgelegt|ausser.?betrieb|außer.?betrieb|abgebrochen|entfernt|rückgebaut|rueckgebaut|out.?of.?service|removed/i
+        return /aufgehoben|stillgelegt|ausser.?betrieb|außer.?betrieb|abgebrochen|entfernt|rückgebaut|rueckgebaut|out.?of.?service|removed|\btot\b/i
             .test(String(v || ''));
     }
 
@@ -78,11 +97,15 @@
         e:       ['e', 'east', 'easting', 'ost', 'rechtswert', 'ekoord', 'koorde', 'koordinatee', 'lv95e', 'c1', 'x', 'xkoord', 'xcoord'],
         n:       ['n', 'north', 'northing', 'nord', 'hochwert', 'nkoord', 'koordn', 'koordinaten', 'lv95n', 'c2', 'y', 'ykoord', 'ycoord'],
         ref:     ['ref', 'nr', 'nummer', 'namenummer', 'name', 'bezeichnung', 'hydrantnr', 'hydrantennr', 'hydrantennummer', 'hydrantnummer', 'objektnummer'],
-        type:    ['type', 'typ', 'art', 'hydrantentyp', 'hydranttyp', 'hydrantart', 'bauart', 'fire_hydranttype', 'firehydranttype'],
+        type:    ['hydart', 'type', 'typ', 'art', 'hydrantentyp', 'hydranttyp', 'hydrantart', 'bauart', 'fire_hydranttype', 'firehydranttype'],
         address: ['address', 'adresse', 'strasse', 'standort', 'lage', 'ort', 'addrfull'],
-        notes:   ['notes', 'note', 'notiz', 'bemerkung', 'bemerkungen', 'kommentar', 'dimension', 'durchmesser'],
+        notes:   ['notes', 'note', 'notiz', 'bemerkung', 'bemerkungen', 'kommentar'],
         status:  ['status', 'zustand', 'betriebsstatus'],
-        id:      ['id', 'objectid', 'objid', 'oid', 'tid', 'uuid', 'fid', 'gid', 'objekt_id', 'objektid'],
+        id:      ['hydid', 'id', 'tid', 'uuid', 'objectid', 'objid', 'oid', 'fid', 'gid', 'objekt_id', 'objektid'],
+        // Technische Angaben (SIA405 / WIWASHYD) → werden an die Bemerkung angehängt
+        dim:     ['dimension', 'durchmesser', 'dn', 'nennweite'],
+        flow:    ['entnahme', 'leistung', 'flow'],
+        press:   ['fliessdruck', 'versorgdruck', 'versorgungsdruck', 'druck'],
     };
 
     function findKey(keys, field) {
@@ -116,14 +139,26 @@
         const status = get('status');
         if (isOutOfService(status)) { result.outOfService++; return; }
 
-        const notes = [get('notes'), status && !/in.?betrieb/i.test(status) ? `Status: ${status}` : null]
-            .filter(Boolean).join(' · ');
+        const type = mapType(get('type'));
+        if (type === null) { result.notHydrant++; return; }
+
+        const val = (field, fmt) => {
+            const n = num(get(field));
+            return isFinite(n) && n > 0 ? fmt(n) : null;
+        };
+        const notes = [
+            get('notes') ? String(get('notes')).trim() : null,
+            val('dim', n => `DN ${n}`),
+            val('flow', n => `${n} l/s`),
+            val('press', n => `${n} bar`),
+            status && !/in.?betrieb/i.test(status) ? `Status: ${status}` : null,
+        ].filter(Boolean).join(' · ');
         const id = get('id');
 
         result.items.push({
             lat: Math.round(pos.lat * 1e7) / 1e7,
             lng: Math.round(pos.lng * 1e7) / 1e7,
-            type: mapType(get('type')),
+            type,
             ref: get('ref') != null ? String(get('ref')).trim() || null : null,
             address: get('address') != null ? String(get('address')).trim() || null : null,
             notes: notes || null,
@@ -131,7 +166,7 @@
         });
     }
 
-    const newResult = (format) => ({ format, items: [], skipped: 0, outOfService: 0, warnings: [] });
+    const newResult = (format) => ({ format, items: [], skipped: 0, outOfService: 0, notHydrant: 0, warnings: [] });
 
     // ── CSV ────────────────────────────────────────────────────────────────
 
@@ -236,7 +271,180 @@
         return result;
     }
 
+    // ── Shapefile (.shp + .dbf, einzeln oder als .zip) ─────────────────────
+    // Standard-Download des Geodatenshops (z.B. WIWASHYD_V3_PT.shp/.dbf).
+
+    /** Minimaler ZIP-Leser (stored + deflate) über DecompressionStream. */
+    async function readZip(buffer) {
+        const view = new DataView(buffer);
+        let eocd = -1;
+        for (let i = buffer.byteLength - 22; i >= Math.max(0, buffer.byteLength - 65557); i--) {
+            if (view.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+        }
+        if (eocd < 0) throw new Error('Keine gültige ZIP-Datei');
+        const count = view.getUint16(eocd + 10, true);
+        let p = view.getUint32(eocd + 16, true);
+        const files = {};
+        for (let n = 0; n < count; n++) {
+            if (view.getUint32(p, true) !== 0x02014b50) break;
+            const method = view.getUint16(p + 10, true);
+            const compSize = view.getUint32(p + 20, true);
+            const nameLen = view.getUint16(p + 28, true);
+            const extraLen = view.getUint16(p + 30, true);
+            const commentLen = view.getUint16(p + 32, true);
+            const localOff = view.getUint32(p + 42, true);
+            const name = new TextDecoder().decode(new Uint8Array(buffer, p + 46, nameLen));
+            p += 46 + nameLen + extraLen + commentLen;
+
+            const dataStart = localOff + 30 + view.getUint16(localOff + 26, true) + view.getUint16(localOff + 28, true);
+            const raw = new Uint8Array(buffer, dataStart, compSize);
+            if (method === 0) {
+                files[name] = raw.slice().buffer;
+            } else if (method === 8) {
+                const stream = new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+                files[name] = await new Response(stream).arrayBuffer();
+            }
+        }
+        return files;
+    }
+
+    /** Punkte aus einer .shp-Datei (Point/PointZ/PointM, bei MultiPoint der erste Punkt). */
+    function parseShpPoints(buffer) {
+        const view = new DataView(buffer);
+        const points = [];
+        let p = 100;
+        while (p + 8 <= buffer.byteLength) {
+            const contentBytes = view.getInt32(p + 4, false) * 2;
+            const c = p + 8;
+            const shapeType = contentBytes >= 4 ? view.getInt32(c, true) : 0;
+            if ([1, 11, 21].includes(shapeType)) {
+                points.push([view.getFloat64(c + 4, true), view.getFloat64(c + 12, true)]);
+            } else if ([8, 18, 28].includes(shapeType) && view.getInt32(c + 36, true) > 0) {
+                points.push([view.getFloat64(c + 40, true), view.getFloat64(c + 48, true)]);
+            } else {
+                points.push(null);
+            }
+            p = c + contentBytes;
+        }
+        return points;
+    }
+
+    /** Attribute aus einer .dbf-Datei. */
+    function parseDbf(buffer, encoding) {
+        const bytes = new Uint8Array(buffer);
+        const view = new DataView(buffer);
+        const numRecords = view.getUint32(4, true);
+        const headerLen = view.getUint16(8, true);
+        const recordLen = view.getUint16(10, true);
+        let decoder;
+        try { decoder = new TextDecoder(encoding || 'windows-1252'); } catch { decoder = new TextDecoder('windows-1252'); }
+
+        const fields = [];
+        for (let p = 32; p + 32 <= headerLen && bytes[p] !== 0x0D; p += 32) {
+            let end = p;
+            while (end < p + 11 && bytes[end] !== 0) end++;
+            fields.push({
+                name: new TextDecoder('ascii').decode(bytes.subarray(p, end)),
+                type: String.fromCharCode(bytes[p + 11]),
+                len: bytes[p + 16],
+            });
+        }
+
+        const rows = [];
+        for (let r = 0; r < numRecords; r++) {
+            let p = headerLen + r * recordLen;
+            if (p + recordLen > bytes.length) break;
+            const deleted = bytes[p] === 0x2A; // '*'
+            p++;
+            const row = {};
+            for (const f of fields) {
+                row[f.name] = decoder.decode(bytes.subarray(p, p + f.len)).trim();
+                p += f.len;
+            }
+            rows.push(deleted ? null : row);
+        }
+        return rows;
+    }
+
+    /** Liest die Zeichenkodierung aus einer .cpg-Datei (z.B. "UTF-8"). */
+    function cpgEncoding(buffer) {
+        if (!buffer) return null;
+        const s = new TextDecoder('ascii').decode(buffer).trim().toLowerCase();
+        if (/utf-?8/.test(s)) return 'utf-8';
+        if (/1252|latin|8859-?1/.test(s)) return 'windows-1252';
+        return s || null;
+    }
+
+    /** { 'name.ext': ArrayBuffer } → Import-Ergebnis */
+    function parseShapefileSet(files) {
+        const result = newResult('Shapefile');
+        const byExt = {};
+        const bases = {};
+        Object.keys(files).forEach((name) => {
+            const m = name.match(/^(.*)\.([a-z0-9]+)$/i);
+            if (!m) return;
+            const base = m[1].split(/[\\/]/).pop(), ext = m[2].toLowerCase();
+            (bases[base] = bases[base] || {})[ext] = files[name];
+            byExt[ext] = files[name];
+        });
+
+        // Mehrere Shapefiles im ZIP (ganze Kollektion)? Bevorzugt das Hydranten-Layer.
+        const names = Object.keys(bases).filter(b => bases[b].shp && bases[b].dbf);
+        if (names.length === 0) {
+            result.warnings.push('Shapefile unvollständig: .shp und .dbf werden benötigt');
+            return result;
+        }
+        const chosen = names.find(b => /hyd/i.test(b)) || names[0];
+        if (names.length > 1) {
+            result.warnings.push(`ZIP enthält ${names.length} Layer – verwendet: ${chosen}`);
+        }
+        const set = bases[chosen];
+        result.format = `Shapefile (${chosen})`;
+
+        const points = parseShpPoints(set.shp);
+        const rows = parseDbf(set.dbf, cpgEncoding(set.cpg));
+        points.forEach((pt, i) => {
+            const row = rows[i];
+            if (row === null) return; // gelöschter Datensatz
+            const coord = pt ? toWgs84(pt[0], pt[1]) : null;
+            if (!coord) { result.skipped++; return; }
+            buildItem(row || {}, coord, result);
+        });
+        return result;
+    }
+
     // ── Einstieg ───────────────────────────────────────────────────────────
+
+    /**
+     * Liest eine oder mehrere ausgewählte Dateien (File-Objekte).
+     * Shapefiles: .zip oder .shp + .dbf (+ .cpg) zusammen auswählen.
+     */
+    async function parseHydrantFiles(fileList) {
+        const list = Array.from(fileList);
+        const ext = (f) => f.name.toLowerCase().split('.').pop();
+
+        const zip = list.find(f => ext(f) === 'zip');
+        if (zip) return parseShapefileSet(await readZip(await zip.arrayBuffer()));
+
+        if (list.some(f => ['shp', 'dbf'].includes(ext(f)))) {
+            const files = {};
+            for (const f of list) files[f.name] = await f.arrayBuffer();
+            return parseShapefileSet(files);
+        }
+
+        const file = list[0];
+        return parseHydrantFile(file.name, await readText(file));
+    }
+
+    /** Liest UTF-8, fällt bei ungültigen Zeichen auf Windows-1252 zurück (Excel-CSV). */
+    async function readText(file) {
+        const buf = await file.arrayBuffer();
+        try {
+            return new TextDecoder('utf-8', { fatal: true }).decode(buf);
+        } catch {
+            return new TextDecoder('windows-1252').decode(buf);
+        }
+    }
 
     function parseHydrantFile(name, text) {
         const ext = String(name).toLowerCase().split('.').pop();
@@ -246,7 +454,10 @@
         return parseCsv(text);
     }
 
-    const api = { parseHydrantFile, parseCsv, parseGeoJson, parseXtf, toWgs84, lv95ToWgs84, mapType };
+    const api = {
+        parseHydrantFiles, parseHydrantFile, parseCsv, parseGeoJson, parseXtf, parseShapefileSet,
+        readZip, parseShpPoints, parseDbf, toWgs84, lv95ToWgs84, mapType,
+    };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
     else root.HydrantImport = api;
 

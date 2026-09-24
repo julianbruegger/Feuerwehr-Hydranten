@@ -120,7 +120,7 @@
     <select class="btn hidden" id="deptSelect" title="Feuerwehr"></select>
     <button class="btn" id="btnAdd" title="Klick auf die Karte setzt einen neuen Hydranten">＋ Hydrant setzen</button>
     <button class="btn" id="btnImport">⬆ Datei importieren</button>
-    <input type="file" id="fileInput" accept=".csv,.txt,.geojson,.json,.xtf,.xml" hidden />
+    <input type="file" id="fileInput" accept=".zip,.shp,.dbf,.cpg,.prj,.csv,.txt,.geojson,.json,.xtf,.xml" multiple hidden title="Shapefile als .zip oder .shp + .dbf zusammen auswählen" />
 </div>
 
 <div class="map-wrap">
@@ -357,30 +357,19 @@ map.on('click', (e) => {
 $('btnImport').onclick = () => $('fileInput').click();
 
 $('fileInput').onchange = async (e) => {
-    const file = e.target.files[0];
+    const files = Array.from(e.target.files);
     e.target.value = '';
-    if (!file) return;
+    if (files.length === 0) return;
     closeEdit();
     let result;
     try {
-        const text = await readText(file);
-        result = HydrantImport.parseHydrantFile(file.name, text);
+        result = await HydrantImport.parseHydrantFiles(files);
     } catch (err) {
         alert('Datei konnte nicht gelesen werden: ' + err.message);
         return;
     }
-    showImport(file.name, result);
+    showImport(files.map(f => f.name).join(', '), result);
 };
-
-/** Liest UTF-8, fällt bei ungültigen Zeichen auf Windows-1252 zurück (Excel-CSV). */
-async function readText(file) {
-    const buf = await file.arrayBuffer();
-    try {
-        return new TextDecoder('utf-8', { fatal: true }).decode(buf);
-    } catch {
-        return new TextDecoder('windows-1252').decode(buf);
-    }
-}
 
 function showImport(name, result) {
     pendingImport = result;
@@ -395,6 +384,7 @@ function showImport(name, result) {
     $('importSummary').innerHTML = `<b>${esc(name)}</b> (${result.format})<br>
         ✅ <b>${result.items.length}</b> Hydranten erkannt` +
         (result.outOfService ? `<br>⏸ ${result.outOfService} ausser Betrieb – übersprungen` : '') +
+        (result.notHydrant ? `<br>⏸ ${result.notHydrant} Sprinkler/Garten-/Schneehydranten – übersprungen` : '') +
         (result.skipped ? `<br>⚠ ${result.skipped} ohne gültige Koordinaten – übersprungen` : '');
     $('importWarnings').innerHTML = result.warnings.map(w => `<p class="warn">${esc(w)}</p>`).join('');
     $('btnImportGo').disabled = result.items.length === 0;
