@@ -14,6 +14,8 @@
 
 const HYDRANT_TILE_DEG       = 0.05;
 const HYDRANT_TILE_FRESH_S   = 30 * 86400;   // 30 Tage frisch
+const HYDRANT_TILE_EMPTY_S   = 86400;        // Leere Kacheln nur 1 Tag (evtl. fehlerhafte Antwort)
+const HYDRANT_TILE_VERSION   = 'h2';         // Dateipräfix – erhöhen, um den Cache zu verwerfen
 const HYDRANT_TILE_MAX_BATCH = 16;           // Max. Kacheln pro Anfrage
 
 function hydrantTileDir(): string
@@ -69,7 +71,7 @@ function hydrantTilesForRadius(float $lat, float $lng, float $radiusM): array
 /** Liest eine Kachel aus dem Datei-Cache: ['ts' => int, 'elements' => array] oder null. */
 function hydrantTileRead(string $key): ?array
 {
-    $path = hydrantTileDir() . "h_{$key}.json";
+    $path = hydrantTileDir() . HYDRANT_TILE_VERSION . "_{$key}.json";
     if (!is_file($path)) return null;
     $data = json_decode((string) @file_get_contents($path), true);
     if (!is_array($data) || !isset($data['elements'])) return null;
@@ -77,9 +79,17 @@ function hydrantTileRead(string $key): ?array
     return $data;
 }
 
+/** Kachel noch frisch? Leere Kacheln laufen schneller ab. */
+function hydrantTileIsFresh(?array $tile): bool
+{
+    if (!$tile) return false;
+    $ttl = empty($tile['elements']) ? HYDRANT_TILE_EMPTY_S : HYDRANT_TILE_FRESH_S;
+    return (time() - $tile['ts']) < $ttl;
+}
+
 function hydrantTileWrite(string $key, array $elements, int $ts): void
 {
-    $path = hydrantTileDir() . "h_{$key}.json";
+    $path = hydrantTileDir() . HYDRANT_TILE_VERSION . "_{$key}.json";
     $tmp  = $path . '.' . getmypid() . '.tmp';
     $json = json_encode(['ts' => $ts, 'elements' => $elements], JSON_UNESCAPED_UNICODE);
     if (@file_put_contents($tmp, $json) !== false) {
@@ -87,14 +97,24 @@ function hydrantTileWrite(string $key, array $elements, int $ts): void
     }
 }
 
-/** POST an die Overpass-Mirrors, gibt dekodierte Antwort oder null zurück. */
+/**
+ * POST an die Overpass-Mirrors, gibt dekodierte Antwort oder null zurück.
+ * Antworten mit "remark" (Timeout, Speicherfehler) sind unvollständig und werden
+ * verworfen. Eine leere Antwort wird nur akzeptiert, wenn kein Mirror Daten liefert.
+ */
 function hydrantOverpassQuery(string $oql, int $timeout = 30): ?array
 {
+    // Schweizer Mirror zuerst (schnell, nur CH-Daten – ausserhalb liefert er
+    // leer und die nächsten Mirrors werden gefragt). overpass-api.de ist oft
+    // überlastet und von manchen Netzen nur per IPv6 erreichbar.
     $mirrors = [
+        'https://overpass.osm.ch/api/interpreter',
         'https://overpass-api.de/api/interpreter',
+        'https://overpass.openstreetmap.fr/api/interpreter',
         'https://overpass.kumi.systems/api/interpreter',
         'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
     ];
+    $empty = null;
     foreach ($mirrors as $mirror) {
         $ch = curl_init($mirror);
         curl_setopt_array($ch, [
@@ -111,9 +131,15 @@ function hydrantOverpassQuery(string $oql, int $timeout = 30): ?array
         curl_close($ch);
         if ($code !== 200 || !$raw) continue;
         $data = json_decode($raw, true);
-        if (isset($data['elements'])) return $data;
+        if (!isset($data['elements']) || !is_array($data['elements'])) continue;
+        if (!empty($data['remark'])) {
+            error_log('[hydrant_tiles] Overpass-Remark von ' . $mirror . ': ' . $data['remark']);
+            continue;
+        }
+        if ($data['elements']) return $data;
+        $empty = $empty ?? $data;
     }
-    return null;
+    return $empty;
 }
 
 /**
@@ -177,7 +203,7 @@ function hydrantTilesGet(array $keys): array
 
     foreach ($keys as $key) {
         $tile = hydrantTileRead($key);
-        if ($tile && (time() - $tile['ts']) < HYDRANT_TILE_FRESH_S) {
+        if (hydrantTileIsFresh($tile)) {
             $result[$key] = $tile;
         } else {
             if ($tile) $stale[$key] = $tile;
@@ -200,7 +226,7 @@ function hydrantTilesGet(array $keys): array
         $still = [];
         foreach ($toFetch as $key) {
             $tile = hydrantTileRead($key);
-            if ($tile && (time() - $tile['ts']) < HYDRANT_TILE_FRESH_S) {
+            if (hydrantTileIsFresh($tile)) {
                 $result[$key] = $tile;
             } else {
                 $still[] = $key;

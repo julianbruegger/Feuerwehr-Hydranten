@@ -38,8 +38,17 @@ if (!$res['tiles']) {
     exit(json_encode(['error' => 'Overpass nicht erreichbar', 'missing' => $res['missing']], JSON_UNESCAPED_UNICODE));
 }
 
-// Vollständige Antworten darf der Browser einen Tag cachen; Teilantworten nicht.
-header($res['missing'] ? 'Cache-Control: no-store' : 'Cache-Control: public, max-age=86400');
+// Vollständige Antworten darf der Browser einen Tag cachen; Teilantworten nicht,
+// Antworten mit leeren Kacheln nur kurz (könnten auf einem Overpass-Fehler beruhen).
+$hasEmpty = false;
+foreach ($res['tiles'] as $tile) {
+    if (empty($tile['elements'])) { $hasEmpty = true; break; }
+}
+if ($res['missing']) {
+    header('Cache-Control: no-store');
+} else {
+    header('Cache-Control: public, max-age=' . ($hasEmpty ? 600 : 86400));
+}
 
 $json = json_encode([
     'tiles'   => (object) $res['tiles'],

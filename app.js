@@ -24,7 +24,7 @@ const DEFAULTS = {
 };
 
 const VIEWPORT_MIN_ZOOM = 13;    // Unterhalb dieses Zooms keine Viewport-Hydranten
-const VIEWPORT_MAX_TILES = 48;   // Sicherheitsgrenze für Kacheln pro Viewport-Abruf
+const VIEWPORT_MAX_TILES = 64;   // Max. Kacheln pro Viewport-Abruf (nächste zur Mitte zuerst)
 
 async function serverProxyFetch(type, pos, radius) {
     const params = new URLSearchParams({
@@ -51,11 +51,18 @@ async function serverProxyFetch(type, pos, radius) {
 const TILE_DEG        = 0.05;                     // ~5.5 × 3.8 km in der Schweiz
 const TILE_FRESH_MS   = 7 * 24 * 60 * 60 * 1000;  // danach im Hintergrund aktualisieren
 const TILE_MAX_AGE_MS = 180 * 24 * 60 * 60 * 1000; // danach verwerfen
+const TILE_EMPTY_FRESH_MS = 60 * 60 * 1000;       // leere Kacheln: evtl. Overpass-Fehler → bald neu laden
 const TILE_BATCH      = 16;                       // Max. Kacheln pro Server-Anfrage
+const TILE_CACHE_VERSION = 2;                     // erhöhen, um alle Client-Caches zu verwerfen
 
 const _tileMem      = new Map(); // key → { ts, elements }
 const _tileInflight = new Map(); // key → Promise<{ ts, elements } | null>
 let _tileDbPromise  = null;
+
+function _tileIsFresh(tile, now) {
+    const ttl = tile.elements.length === 0 ? TILE_EMPTY_FRESH_MS : TILE_FRESH_MS;
+    return now - tile.ts < ttl;
+}
 
 function tileKeyFor(lat, lng) {
     return `${Math.floor(lng / TILE_DEG)}_${Math.floor(lat / TILE_DEG)}`;
@@ -81,7 +88,8 @@ function _tileDb() {
     if (!_tileDbPromise) {
         _tileDbPromise = new Promise((resolve) => {
             try {
-                const req = indexedDB.open('hw-hydrants', 1);
+                try { indexedDB.deleteDatabase('hw-hydrants'); } catch { /* alte Version */ }
+                const req = indexedDB.open(`hw-hydrants-v${TILE_CACHE_VERSION}`, 1);
                 req.onupgradeneeded = () => req.result.createObjectStore('tiles');
                 req.onsuccess = () => resolve(req.result);
                 req.onerror = () => resolve(null);
@@ -126,7 +134,7 @@ function _fetchTilesFromServer(keys, { reload = false } = {}) {
     const promises = [];
     for (let i = 0; i < keys.length; i += TILE_BATCH) {
         const batch = keys.slice(i, i + TILE_BATCH);
-        const p = fetch(`/api/hydrants.php?tiles=${batch.join(',')}`, reload ? { cache: 'reload' } : {})
+        const p = fetch(`/api/hydrants.php?v=${TILE_CACHE_VERSION}&tiles=${batch.join(',')}`, reload ? { cache: 'reload' } : {})
             .then((res) => {
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 return res.json();
@@ -173,9 +181,10 @@ async function getHydrantTiles(keys, { onTile = null, force = false } = {}) {
     const needDb = [];
     keys.forEach((key) => {
         const t = _tileMem.get(key);
-        if (t && !force) {
+        // Veraltete leere Kacheln nicht anzeigen, sondern direkt neu laden
+        if (t && !force && (t.elements.length > 0 || _tileIsFresh(t, now))) {
             deliver(key, t);
-            if (now - t.ts > TILE_FRESH_MS) toRevalidate.push(key);
+            if (!_tileIsFresh(t, now)) toRevalidate.push(key);
         } else {
             needDb.push(key);
         }
@@ -186,10 +195,10 @@ async function getHydrantTiles(keys, { onTile = null, force = false } = {}) {
         const fromDb = await _tileDbGetMany(needDb);
         needDb.forEach((key) => {
             const t = fromDb.get(key);
-            if (t && now - t.ts < TILE_MAX_AGE_MS) {
+            if (t && now - t.ts < TILE_MAX_AGE_MS && (t.elements.length > 0 || _tileIsFresh(t, now))) {
                 _tileMem.set(key, t);
                 deliver(key, t);
-                if (now - t.ts > TILE_FRESH_MS) toRevalidate.push(key);
+                if (!_tileIsFresh(t, now)) toRevalidate.push(key);
             } else {
                 toLoad.push(key);
             }
@@ -233,6 +242,93 @@ try {
         .filter((key) => key.startsWith('hw_hydrants_'))
         .forEach((key) => localStorage.removeItem(key));
 } catch { /* ignorieren */ }
+
+// ─────────────────────────────────────────
+// Eigene Hydranten der Feuerwehr (nur eingeloggt)
+// ─────────────────────────────────────────
+//
+// Für Gebiete ohne OSM-Hydranten (z.B. Rothenburg LU) kann eine Feuerwehr im
+// Admin-Bereich Hydranten importieren oder setzen. Sie werden mit den OSM-Daten
+// zusammengeführt; OSM-Hydranten in < OFFICIAL_DEDUP_M Abstand werden ausgeblendet.
+
+const OFFICIAL_DEDUP_M = 10;
+const OFFICIAL_GRID_DEG = 0.0005; // ~50 m Raster für die Nachbarschaftssuche
+
+const official = {
+    elements: [],        // Overpass-Format: { id: 'd12', lat, lon, tags }
+    ids: new Set(),
+    grid: new Map(),     // Rasterzelle → Elemente
+    layer: null,
+    ready: Promise.resolve(),
+};
+
+function _officialCell(lat, lng) {
+    return `${Math.floor(lat / OFFICIAL_GRID_DEG)}_${Math.floor(lng / OFFICIAL_GRID_DEG)}`;
+}
+
+/** Liegt ein eigener Hydrant in < OFFICIAL_DEDUP_M? (dann OSM-Duplikat ausblenden) */
+function isNearOfficialHydrant(lat, lng) {
+    if (official.elements.length === 0) return false;
+    const cy = Math.floor(lat / OFFICIAL_GRID_DEG), cx = Math.floor(lng / OFFICIAL_GRID_DEG);
+    for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+            const list = official.grid.get(`${cy + dy}_${cx + dx}`);
+            if (list && list.some(o => haversineDistance({ lat, lng }, { lat: o.lat, lng: o.lon }) < OFFICIAL_DEDUP_M)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+async function loadOfficialHydrants() {
+    const token = localStorage.getItem('hw_token');
+    const expires = parseInt(localStorage.getItem('hw_expires') || '0', 10);
+    if (!token || Date.now() > expires) return;
+    try {
+        const res = await fetch('/admin/hydrants_api.php?action=map_data', {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!Array.isArray(data)) return;
+        official.elements = data;
+        official.ids = new Set(data.map(el => el.id));
+        official.grid.clear();
+        data.forEach(el => {
+            const key = _officialCell(el.lat, el.lon);
+            if (!official.grid.has(key)) official.grid.set(key, []);
+            official.grid.get(key).push(el);
+        });
+    } catch (err) {
+        console.warn('Eigene Hydranten konnten nicht geladen werden', err);
+    }
+}
+
+function renderOfficialHydrants() {
+    if (official.layer) state.map.removeLayer(official.layer);
+    official.layer = null;
+    if (official.elements.length === 0 || state.map.getZoom() < VIEWPORT_MIN_ZOOM) return;
+
+    if (!_viewportRenderer) _viewportRenderer = L.canvas({ padding: 0.5 });
+    official.layer = L.layerGroup();
+    official.elements.forEach(el => {
+        const h = { id: el.id, lat: el.lat, lng: el.lon, tags: el.tags || {} };
+        const ref = h.tags.ref ? ` ${h.tags.ref}` : '';
+        L.circleMarker([h.lat, h.lng], {
+            renderer: _viewportRenderer,
+            radius: 6,
+            weight: 2.5,
+            color: '#facc15',     // gelber Rand = eigene Daten der Feuerwehr
+            fillColor: '#e63946',
+            fillOpacity: 1,
+        })
+            .bindTooltip(`${getHydrantLabel(h.tags)}${ref} (Feuerwehr)`, { direction: 'top' })
+            .on('click', () => selectHydrant(state.hydrants.find(x => x.id === h.id) || h))
+            .addTo(official.layer);
+    });
+    official.layer.addTo(state.map);
+}
 
 // ─────────────────────────────────────────
 // App-Zustand
@@ -619,12 +715,17 @@ async function fetchHydrants({ force = false } = {}) {
         const { tiles, fromCache, failed } = await getHydrantTiles(tileKeysForRadius(pos, radius), { force });
         // Inzwischen neuere Anfrage gestartet (z.B. Brandposition verschoben)?
         if (requestId !== _hydrantRequestId) return;
-        if (tiles.size === 0) throw new Error('Server nicht erreichbar');
+        if (tiles.size === 0 && official.elements.length === 0) throw new Error('Server nicht erreichbar');
+
+        await official.ready;
+        if (requestId !== _hydrantRequestId) return;
 
         const elements = [];
+        const inRadius = (el) => haversineDistance(pos, { lat: el.lat, lng: el.lon }) <= radius;
         tiles.forEach((els) => els.forEach((el) => {
-            if (haversineDistance(pos, { lat: el.lat, lng: el.lon }) <= radius) elements.push(el);
+            if (inRadius(el) && !isNearOfficialHydrant(el.lat, el.lon)) elements.push(el);
         }));
+        official.elements.forEach((el) => { if (inRadius(el)) elements.push(el); });
         processHydrantData(elements);
 
         if (failed.length) {
@@ -831,6 +932,8 @@ function getHydrantLabel(tags) {
 
 function getHydrantAddress(tags) {
     const parts = [];
+    if (tags?.ref) parts.push(`Nr. ${tags.ref}`);
+    if (tags?.['addr:full']) parts.push(tags['addr:full']);
     if (tags?.['addr:street']) parts.push(tags['addr:street']);
     if (tags?.['addr:housenumber']) parts.push(tags['addr:housenumber']);
     if (tags?.name) parts.push(tags.name);
@@ -1007,7 +1110,7 @@ function renderAllHydrantMarkers() {
     state.hydrants.forEach(h => {
         if (state.selectedHydrantId === h.id) return;
         // Skip hydrants already visible as viewport markers
-        if (state.viewportHydrantIds.has(h.id)) return;
+        if (state.viewportHydrantIds.has(h.id) || official.ids.has(h.id)) return;
         const marker = L.marker([h.lat, h.lng], {
             icon: ALL_HYDRANT_ICON,
             zIndexOffset: -100,
@@ -1063,13 +1166,13 @@ function _rebuildViewportIndex() {
     });
 }
 
-function renderViewportTile(key, elements) {
+function renderViewportTile(key, elements, force = false) {
     const wanted = state.viewportWantedTiles;
     if (!wanted.has(key)) return;
 
     const useIcons = _viewportUseIcons();
     const existing = state.viewportTiles.get(key);
-    if (existing && existing.elements === elements && existing.useIcons === useIcons) return;
+    if (!force && existing && existing.elements === elements && existing.useIcons === useIcons) return;
     if (existing) state.map.removeLayer(existing.layer);
 
     if (!_viewportRenderer) _viewportRenderer = L.canvas({ padding: 0.5 });
@@ -1077,6 +1180,7 @@ function renderViewportTile(key, elements) {
     const layer = L.layerGroup();
     const ids = [];
     elements.forEach(el => {
+        if (isNearOfficialHydrant(el.lat, el.lon)) return; // eigener Hydrant ersetzt OSM-Eintrag
         const h = { id: el.id, lat: el.lat, lng: el.lon, tags: el.tags || {} };
         const marker = useIcons
             ? L.marker([h.lat, h.lng], { icon: ALL_HYDRANT_ICON, zIndexOffset: -100 })
@@ -1109,13 +1213,24 @@ async function loadViewportHydrants() {
     if (state.map.getZoom() < VIEWPORT_MIN_ZOOM) {
         state.viewportWantedTiles = new Set();
         clearViewportHydrantMarkers();
+        if (official.layer) renderOfficialHydrants();
         return;
     }
+    if (!official.layer && official.elements.length) renderOfficialHydrants();
 
     // Sichtbarer Bereich + Rand, damit beim Verschieben schon Daten da sind
     const b = state.map.getBounds().pad(0.25);
-    const keys = tileKeysForBounds(b.getSouth(), b.getWest(), b.getNorth(), b.getEast());
-    if (keys.length > VIEWPORT_MAX_TILES) return;
+    const c = state.map.getCenter();
+    const [cx, cy] = tileKeyFor(c.lat, c.lng).split('_').map(Number);
+    const tileDist = (k) => {
+        const [x, y] = k.split('_').map(Number);
+        return Math.hypot(x - cx, y - cy);
+    };
+    // Mitte zuerst laden – dort schaut der Benutzer hin. Bei sehr grossen
+    // Ausschnitten (z.B. Desktop bei Zoom 13) nur die Kacheln nahe der Mitte.
+    const keys = tileKeysForBounds(b.getSouth(), b.getWest(), b.getNorth(), b.getEast())
+        .sort((k1, k2) => tileDist(k1) - tileDist(k2))
+        .slice(0, VIEWPORT_MAX_TILES);
     state.viewportWantedTiles = new Set(keys);
 
     // Kacheln ausserhalb des Bereichs entfernen, Darstellungsart ggf. wechseln
@@ -1131,11 +1246,6 @@ async function loadViewportHydrants() {
         }
     });
     if (changed) _rebuildViewportIndex();
-
-    // Mitte zuerst laden – dort schaut der Benutzer hin
-    const c = state.map.getCenter();
-    const centerKey = tileKeyFor(c.lat, c.lng);
-    keys.sort((k1, k2) => (k1 === centerKey ? -1 : k2 === centerKey ? 1 : 0));
 
     const missing = keys.filter(k => !state.viewportTiles.has(k));
     if (missing.length === 0) return;
@@ -1592,6 +1702,13 @@ async function loadWtpMarkers() {
 // ─────────────────────────────────────────
 
 function init() {
+    // Eigene Hydranten parallel laden; Standortsuche wartet darauf
+    official.ready = loadOfficialHydrants().then(() => {
+        if (!state.map) return;
+        renderOfficialHydrants();
+        // OSM-Duplikate in bereits gezeichneten Kacheln ausblenden
+        state.viewportTiles.forEach((t, key) => renderViewportTile(key, t.elements, true));
+    });
     initMap();
     initSheetDrag();
     initEventListeners();

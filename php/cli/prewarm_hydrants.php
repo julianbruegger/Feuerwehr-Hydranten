@@ -35,7 +35,7 @@ for ($by = $y0; $by <= $y1; $by += BLOCK) {
         for ($y = $by; $y < min($by + BLOCK, $y1 + 1); $y++) {
             for ($x = $bx; $x < min($bx + BLOCK, $x1 + 1); $x++) {
                 $tile = hydrantTileRead(hydrantTileKey($x, $y));
-                if (!$tile || (time() - $tile['ts']) >= HYDRANT_TILE_FRESH_S) {
+                if (!hydrantTileIsFresh($tile)) {
                     $keys[] = hydrantTileKey($x, $y);
                 }
             }

@@ -70,6 +70,7 @@ function curl_get(string $url, ?string $post_body = null): ?string
     $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CONNECTTIMEOUT => 5,
         CURLOPT_TIMEOUT        => 35,
         CURLOPT_SSL_VERIFYPEER => true,
         CURLOPT_USERAGENT      => 'Hydrantennavigator/1.0',
@@ -106,7 +107,9 @@ OQL;
 // ── Overpass mirrors with fallback ────────────────────────────────────────────
 
 $overpass_mirrors = [
+    'https://overpass.osm.ch/api/interpreter',
     'https://overpass-api.de/api/interpreter',
+    'https://overpass.openstreetmap.fr/api/interpreter',
     'https://overpass.kumi.systems/api/interpreter',
     'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 ];
