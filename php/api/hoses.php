@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/hydrant_tiles.php';
 
 corsHeaders();
 header('Content-Type: application/json; charset=utf-8');
@@ -17,42 +18,15 @@ if ($lat === false || $lng === false || $lat < -90 || $lat > 90 || $lng < -180 |
     jsonError('lat und lng sind Pflichtparameter');
 }
 
-// Fetch hydrants from Overpass
-$oql = "[out:json][timeout:15];\nnode[\"emergency\"=\"fire_hydrant\"](around:{$radius},{$lat},{$lng});\nout body;";
-
-$overpassEndpoints = [
-    'https://overpass-api.de/api/interpreter',
-    'https://overpass.kumi.systems/api/interpreter',
-    'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
-];
-
-$elements = null;
-foreach ($overpassEndpoints as $endpoint) {
-    $ch = curl_init($endpoint);
-    curl_setopt_array($ch, [
-        CURLOPT_POST           => true,
-        CURLOPT_POSTFIELDS     => 'data=' . urlencode($oql),
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT        => 20,
-    ]);
-    $body = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-    if ($httpCode === 200 && $body) {
-        $data = json_decode($body, true);
-        if (isset($data['elements'])) {
-            $elements = $data['elements'];
-            break;
-        }
-    }
+// Hydranten aus dem Kachel-Cache (lädt fehlende Kacheln von Overpass nach)
+$radius = max(200, min(5000, (int) $radius));
+$tileKeys = hydrantTilesForRadius($lat, $lng, $radius);
+if (count($tileKeys) > HYDRANT_TILE_MAX_BATCH) {
+    jsonError('Radius zu gross');
 }
-
-if ($elements === null) {
+$tileRes = hydrantTilesGet($tileKeys);
+if (!$tileRes['tiles']) {
     jsonError('Overpass API nicht erreichbar', 502);
-}
-
-if (count($elements) === 0) {
-    jsonResponse(['hoses' => null, 'error' => "Keine Hydranten im Umkreis von {$radius} m gefunden"]);
 }
 
 // Haversine distance
@@ -64,10 +38,18 @@ function haversine(float $lat1, float $lng1, float $lat2, float $lng2): float {
     return $R * 2 * atan2(sqrt($a), sqrt(1-$a));
 }
 
-foreach ($elements as &$el) {
-    $el['_dist'] = haversine($lat, $lng, $el['lat'], $el['lon']);
+$elements = [];
+foreach ($tileRes['tiles'] as $tile) {
+    foreach ($tile['elements'] as $el) {
+        $el['_dist'] = haversine($lat, $lng, $el['lat'], $el['lon']);
+        if ($el['_dist'] <= $radius) $elements[] = $el;
+    }
 }
-unset($el);
+
+if (count($elements) === 0) {
+    jsonResponse(['hoses' => null, 'error' => "Keine Hydranten im Umkreis von {$radius} m gefunden"]);
+}
+
 usort($elements, fn($a, $b) => $a['_dist'] <=> $b['_dist']);
 $best = $elements[0];
 

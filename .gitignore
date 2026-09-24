@@ -8,6 +8,7 @@ build/
 
 # Cache
 cache/*.json
+cache/tiles/
 
 # Uploads
 uploads/
