@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>🧯 Eigene Hydranten – Admin</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap"
+        rel="stylesheet" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        :root {
+            --bg: #0f0f14;
+            --surface: #18181f;
+            --card: #22222d;
+            --hover: #2a2a38;
+            --red: #e63946;
+            --blue: #3b82f6;
+            --green: #4ade80;
+            --orange: #f97316;
+            --text: #f1f1f5;
+            --muted: #8a8a9a;
+            --border: rgba(255, 255, 255, 0.07);
+            --radius: 14px;
+        }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
+
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            -webkit-font-smoothing: antialiased
+        }
+
+        .topbar {
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 12px; padding: 0 16px; height: 58px; flex-shrink: 0;
+            background: rgba(15,15,20,.95); border-bottom: 1px solid var(--border)
+        }
+        .topbar__left { display: flex; align-items: center; gap: 10px; min-width: 0 }
+        .topbar__title { font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+        .topbar__back {
+            padding: 7px 14px; border: 1px solid var(--border); border-radius: 999px;
+            color: var(--muted); font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap
+        }
+        .topbar__back:hover { color: var(--text); border-color: rgba(255,255,255,.2) }
+
+        .toolbar {
+            display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+            padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0
+        }
+        .toolbar__info { font-size: 13px; color: var(--muted); margin-right: auto }
+        .toolbar__info b { color: var(--text) }
+
+        .btn {
+            padding: 8px 14px; border-radius: 10px; border: 1px solid var(--border);
+            background: var(--card); color: var(--text); font-family: inherit;
+            font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap
+        }
+        .btn:hover { background: var(--hover) }
+        .btn.active { background: var(--blue); border-color: var(--blue) }
+        .btn--primary { background: var(--red); border-color: var(--red) }
+        .btn--primary:hover { background: var(--red); opacity: .88 }
+        .btn--danger { color: var(--red) }
+        .btn:disabled { opacity: .5; cursor: not-allowed }
+
+        select.btn { appearance: auto }
+
+        #map { flex: 1; min-height: 0 }
+
+        .hint {
+            position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+            z-index: 500; background: var(--blue); color: #fff; font-size: 13px; font-weight: 600;
+            padding: 8px 14px; border-radius: 999px; box-shadow: 0 4px 16px rgba(0,0,0,.4); pointer-events: none
+        }
+        .map-wrap { position: relative; flex: 1; display: flex; min-height: 0 }
+        .hidden { display: none !important }
+
+        .panel {
+            position: absolute; right: 12px; bottom: 12px; z-index: 600; width: min(360px, calc(100% - 24px));
+            background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+            padding: 16px; box-shadow: 0 8px 32px rgba(0,0,0,.5); max-height: calc(100% - 24px); overflow-y: auto
+        }
+        .panel__title { font-size: 15px; font-weight: 700; margin-bottom: 12px }
+        .field { margin-bottom: 10px }
+        .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; font-weight: 600 }
+        .field input, .field select, .field textarea {
+            width: 100%; padding: 9px 11px; background: var(--card); border: 1px solid var(--border);
+            border-radius: 10px; color: var(--text); font-family: inherit; font-size: 14px; outline: none
+        }
+        .field textarea { min-height: 60px; resize: vertical }
+        .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--blue) }
+        .actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap }
+        .actions .btn { flex: 1 }
+        .muted { font-size: 12px; color: var(--muted); line-height: 1.5 }
+        .warn { font-size: 12px; color: var(--orange); margin-top: 6px; line-height: 1.5 }
+        .summary { font-size: 14px; line-height: 1.7; margin-bottom: 8px }
+        .radio { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; margin: 6px 0; cursor: pointer }
+        .radio input { margin-top: 3px }
+    </style>
+</head>
+
+<body>
+
+<header class="topbar">
+    <div class="topbar__left">
+        <span style="font-size:22px">🧯</span>
+        <span class="topbar__title" id="title">Eigene Hydranten</span>
+    </div>
+    <a href="/admin/" class="topbar__back">← Admin</a>
+</header>
+
+<div class="toolbar">
+    <span class="toolbar__info" id="info">Lade…</span>
+    <select class="btn hidden" id="deptSelect" title="Feuerwehr"></select>
+    <button class="btn" id="btnAdd" title="Klick auf die Karte setzt einen neuen Hydranten">＋ Hydrant setzen</button>
+    <button class="btn" id="btnImport">⬆ Datei importieren</button>
+    <input type="file" id="fileInput" accept=".csv,.txt,.geojson,.json,.xtf,.xml" hidden />
+</div>
+
+<div class="map-wrap">
+    <div id="map"></div>
+    <div class="hint hidden" id="hint">Auf die Karte tippen, um einen Hydranten zu setzen</div>
+
+    <!-- Hydrant bearbeiten -->
+    <div class="panel hidden" id="editPanel">
+        <div class="panel__title" id="editTitle">Hydrant</div>
+        <div class="field">
+            <label for="fRef">Nummer / Bezeichnung</label>
+            <input id="fRef" maxlength="100" placeholder="z.B. H-101" />
+        </div>
+        <div class="field">
+            <label for="fType">Typ</label>
+            <select id="fType">
+                <option value="underground">Unterflurhydrant</option>
+                <option value="pillar">Überflurhydrant</option>
+                <option value="wall">Wandhydrant</option>
+                <option value="pond">Löschwasser (Teich/Becken)</option>
+                <option value="other">Sonstiges</option>
+            </select>
+        </div>
+        <div class="field">
+            <label for="fAddress">Adresse / Standort</label>
+            <input id="fAddress" maxlength="255" />
+        </div>
+        <div class="field">
+            <label for="fNotes">Bemerkung</label>
+            <textarea id="fNotes" maxlength="500" placeholder="z.B. DN 100, hinter Gartentor"></textarea>
+        </div>
+        <p class="muted" id="editMeta"></p>
+        <div class="actions">
+            <button class="btn btn--danger" id="btnDelete">Löschen</button>
+            <button class="btn" id="btnCancel">Abbrechen</button>
+            <button class="btn btn--primary" id="btnSave">Speichern</button>
+        </div>
+    </div>
+
+    <!-- Import -->
+    <div class="panel hidden" id="importPanel">
+        <div class="panel__title">Import</div>
+        <div class="summary" id="importSummary"></div>
+        <div id="importWarnings"></div>
+        <label class="radio"><input type="radio" name="mode" value="merge" checked />
+            <span><b>Ergänzen / aktualisieren</b><br /><span class="muted">Bereits importierte Hydranten mit gleicher ID bzw. Position werden aktualisiert.</span></span></label>
+        <label class="radio"><input type="radio" name="mode" value="replace" />
+            <span><b>Import ersetzen</b><br /><span class="muted">Alle bisher importierten Hydranten werden gelöscht. Manuell gesetzte bleiben.</span></span></label>
+        <p class="muted" style="margin-top:8px">Vorschau: blaue Punkte auf der Karte. Die Daten sind nur für eingeloggte Mitglieder deiner Feuerwehr sichtbar.</p>
+        <div class="actions">
+            <button class="btn" id="btnImportCancel">Abbrechen</button>
+            <button class="btn btn--primary" id="btnImportGo">Importieren</button>
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/admin/hydrant-import.js"></script>
+<script>
+'use strict';
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+const token = localStorage.getItem('hw_token');
+const isAdmin = localStorage.getItem('hw_is_admin') === '1';
+function clearAuth() {
+    localStorage.removeItem('hw_token');
+    localStorage.removeItem('hw_dept_name');
+    localStorage.removeItem('hw_expires');
+    localStorage.removeItem('hw_is_admin');
+    window.location.href = '/login.php';
+}
+if (!token || Date.now() > parseInt(localStorage.getItem('hw_expires') || 0, 10)) clearAuth();
+
+const $ = (id) => document.getElementById(id);
+$('title').textContent = `${localStorage.getItem('hw_dept_name') || 'Feuerwehr'} – Eigene Hydranten`;
+
+const TYPE_LABELS = {
+    underground: 'Unterflurhydrant', pillar: 'Überflurhydrant', wall: 'Wandhydrant',
+    pond: 'Löschwasser', other: 'Hydrant',
+};
+
+async function api(action, { id, body, query = '' } = {}) {
+    let url = `/admin/hydrants_api.php?action=${encodeURIComponent(action)}${query}`;
+    if (id) url += `&id=${encodeURIComponent(id)}`;
+    try {
+        const res = await fetch(url, {
+            method: body ? 'POST' : 'GET',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: body ? JSON.stringify(body) : undefined,
+        });
+        if (res.status === 401) clearAuth();
+        const data = await res.json();
+        if (data && data.error) { alert('Fehler: ' + data.error); return null; }
+        return data;
+    } catch {
+        alert('Netzwerkfehler – bitte erneut versuchen.');
+        return null;
+    }
+}
+
+// ── Feuerwehr (Admin wählt aus) ───────────────────────────────────────────────
+let deptId = null;
+const deptParam = () => (deptId ? `&dept_id=${deptId}` : '');
+const withDept = (body) => (deptId ? Object.assign({ department_id: deptId }, body) : body);
+
+// ── Karte ─────────────────────────────────────────────────────────────────────
+const map = L.map('map').setView([47.0955, 8.2717], 15); // Rothenburg LU
+const layers = {
+    'Karte': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap', maxZoom: 20, maxNativeZoom: 19,
+    }),
+    'Luftbild': L.tileLayer('https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissimage/default/current/3857/{z}/{x}/{y}.jpeg', {
+        attribution: '© swisstopo', maxZoom: 21, maxNativeZoom: 19,
+    }),
+};
+layers['Karte'].addTo(map);
+L.control.layers(layers).addTo(map);
+
+const hydrantIcon = (selected) => L.divIcon({
+    className: '',
+    html: `<div style="width:18px;height:18px;border-radius:50%;background:${selected ? '#f97316' : '#e63946'};
+        border:3px solid #fff;box-shadow:0 1px 6px rgba(0,0,0,.5)"></div>`,
+    iconSize: [18, 18], iconAnchor: [9, 9],
+});
+
+let hydrants = [];            // Datensätze vom Server
+const markers = new Map();    // id → Marker
+let selected = null;          // { id|null, marker }
+let addMode = false;
+const previewLayer = L.layerGroup().addTo(map);
+let pendingImport = null;
+
+async function load(fit = false) {
+    const data = await api('list', { query: deptParam() });
+    hydrants = Array.isArray(data) ? data : [];
+    markers.forEach(m => map.removeLayer(m));
+    markers.clear();
+    hydrants.forEach(addMarker);
+    const imported = hydrants.filter(h => h.source === 'import').length;
+    $('info').innerHTML = `<b>${hydrants.length}</b> Hydranten (${imported} importiert, ${hydrants.length - imported} manuell)`;
+    if (fit && hydrants.length) {
+        map.fitBounds(L.latLngBounds(hydrants.map(h => [h.lat, h.lng])), { padding: [40, 40], maxZoom: 17 });
+    }
+}
+
+function addMarker(h) {
+    const m = L.marker([h.lat, h.lng], { icon: hydrantIcon(false), draggable: true })
+        .addTo(map)
+        .bindTooltip(`${TYPE_LABELS[h.type] || 'Hydrant'}${h.ref ? ' ' + h.ref : ''}`, { direction: 'top' });
+    m.on('click', () => openEdit(h, m));
+    m.on('dragend', async () => {
+        const p = m.getLatLng();
+        const res = await api('update', { id: h.id, body: Object.assign({}, h, { lat: p.lat, lng: p.lng }) });
+        if (res) { h.lat = p.lat; h.lng = p.lng; }
+        else m.setLatLng([h.lat, h.lng]);
+    });
+    markers.set(h.id, m);
+}
+
+// ── Bearbeiten ────────────────────────────────────────────────────────────────
+function openEdit(h, marker) {
+    closeEdit();
+    hideImport();
+    selected = { h, marker };
+    marker.setIcon(hydrantIcon(true));
+    $('editTitle').textContent = h.id ? 'Hydrant bearbeiten' : 'Neuer Hydrant';
+    $('fRef').value = h.ref || '';
+    $('fType').value = h.type || 'underground';
+    $('fAddress').value = h.address || '';
+    $('fNotes').value = h.notes || '';
+    $('editMeta').textContent = h.id
+        ? `${h.source === 'import' ? 'Importiert' : 'Manuell erfasst'} · Punkt kann verschoben werden`
+        : 'Punkt kann vor dem Speichern verschoben werden';
+    $('btnDelete').classList.toggle('hidden', !h.id);
+    $('editPanel').classList.remove('hidden');
+}
+
+function closeEdit() {
+    if (!selected) return;
+    if (!selected.h.id) map.removeLayer(selected.marker);
+    else selected.marker.setIcon(hydrantIcon(false));
+    selected = null;
+    $('editPanel').classList.add('hidden');
+}
+
+$('btnCancel').onclick = closeEdit;
+
+$('btnSave').onclick = async () => {
+    if (!selected) return;
+    const p = selected.marker.getLatLng();
+    const body = {
+        lat: p.lat, lng: p.lng,
+        type: $('fType').value, ref: $('fRef').value,
+        address: $('fAddress').value, notes: $('fNotes').value,
+    };
+    $('btnSave').disabled = true;
+    const res = selected.h.id
+        ? await api('update', { id: selected.h.id, body })
+        : await api('create', { body: withDept(body) });
+    $('btnSave').disabled = false;
+    if (!res) return;
+    if (!selected.h.id) map.removeLayer(selected.marker);
+    selected = null;
+    $('editPanel').classList.add('hidden');
+    load();
+};
+
+$('btnDelete').onclick = async () => {
+    if (!selected?.h.id || !confirm('Diesen Hydranten löschen?')) return;
+    const res = await api('delete', { id: selected.h.id, body: {} });
+    if (!res) return;
+    selected = null;
+    $('editPanel').classList.add('hidden');
+    load();
+};
+
+// ── Neu setzen ────────────────────────────────────────────────────────────────
+function setAddMode(on) {
+    addMode = on;
+    $('btnAdd').classList.toggle('active', on);
+    $('hint').classList.toggle('hidden', !on);
+    map.getContainer().style.cursor = on ? 'crosshair' : '';
+}
+$('btnAdd').onclick = () => setAddMode(!addMode);
+
+map.on('click', (e) => {
+    if (!addMode) return;
+    setAddMode(false);
+    const marker = L.marker(e.latlng, { icon: hydrantIcon(true), draggable: true }).addTo(map);
+    openEdit({ id: null, type: 'underground' }, marker);
+});
+
+// ── Import ────────────────────────────────────────────────────────────────────
+$('btnImport').onclick = () => $('fileInput').click();
+
+$('fileInput').onchange = async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    closeEdit();
+    let result;
+    try {
+        const text = await readText(file);
+        result = HydrantImport.parseHydrantFile(file.name, text);
+    } catch (err) {
+        alert('Datei konnte nicht gelesen werden: ' + err.message);
+        return;
+    }
+    showImport(file.name, result);
+};
+
+/** Liest UTF-8, fällt bei ungültigen Zeichen auf Windows-1252 zurück (Excel-CSV). */
+async function readText(file) {
+    const buf = await file.arrayBuffer();
+    try {
+        return new TextDecoder('utf-8', { fatal: true }).decode(buf);
+    } catch {
+        return new TextDecoder('windows-1252').decode(buf);
+    }
+}
+
+function showImport(name, result) {
+    pendingImport = result;
+    previewLayer.clearLayers();
+    result.items.forEach(it => L.circleMarker([it.lat, it.lng], {
+        radius: 5, color: '#fff', weight: 1.5, fillColor: '#3b82f6', fillOpacity: 0.9,
+    }).bindTooltip(`${TYPE_LABELS[it.type]}${it.ref ? ' ' + it.ref : ''}`).addTo(previewLayer));
+    if (result.items.length) {
+        map.fitBounds(L.latLngBounds(result.items.map(it => [it.lat, it.lng])), { padding: [40, 40], maxZoom: 17 });
+    }
+    const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    $('importSummary').innerHTML = `<b>${esc(name)}</b> (${result.format})<br>
+        ✅ <b>${result.items.length}</b> Hydranten erkannt` +
+        (result.outOfService ? `<br>⏸ ${result.outOfService} ausser Betrieb – übersprungen` : '') +
+        (result.skipped ? `<br>⚠ ${result.skipped} ohne gültige Koordinaten – übersprungen` : '');
+    $('importWarnings').innerHTML = result.warnings.map(w => `<p class="warn">${esc(w)}</p>`).join('');
+    $('btnImportGo').disabled = result.items.length === 0;
+    $('importPanel').classList.remove('hidden');
+}
+
+function hideImport() {
+    pendingImport = null;
+    previewLayer.clearLayers();
+    $('importPanel').classList.add('hidden');
+}
+$('btnImportCancel').onclick = hideImport;
+
+$('btnImportGo').onclick = async () => {
+    if (!pendingImport) return;
+    const mode = document.querySelector('input[name="mode"]:checked').value;
+    if (mode === 'replace' && !confirm('Alle bisher importierten Hydranten werden ersetzt. Fortfahren?')) return;
+    const items = pendingImport.items;
+    const CHUNK = 1000;
+    let imported = 0, removed = 0;
+    $('btnImportGo').disabled = true;
+    for (let i = 0; i < items.length; i += CHUNK) {
+        $('btnImportGo').textContent = `Importiere… ${Math.round(i / items.length * 100)}%`;
+        const res = await api('import', { body: withDept({ mode, first: i === 0, items: items.slice(i, i + CHUNK) }) });
+        if (!res) break;
+        imported += res.imported;
+        removed += res.removed;
+    }
+    $('btnImportGo').textContent = 'Importieren';
+    $('btnImportGo').disabled = false;
+    hideImport();
+    await load(true);
+    alert(`${imported} Hydranten importiert` + (removed ? `, ${removed} alte ersetzt` : '') + '.');
+};
+
+// ── Start ─────────────────────────────────────────────────────────────────────
+(async function init() {
+    if (isAdmin) {
+        const depts = await fetch('/admin/api.php?action=departments', {
+            headers: { 'Authorization': `Bearer ${token}` },
+        }).then(r => r.json()).catch(() => []);
+        if (Array.isArray(depts) && depts.length) {
+            const $sel = $('deptSelect');
+            $sel.innerHTML = depts.map(d => `<option value="${d.id}">${String(d.name).replace(/</g, '&lt;')}</option>`).join('');
+            $sel.classList.remove('hidden');
+            deptId = Number($sel.value);
+            $sel.onchange = () => { deptId = Number($sel.value); closeEdit(); hideImport(); load(true); };
+        }
+    }
+    await load(true);
+})();
+</script>
+</body>
+</html>

@@ -132,5 +132,25 @@ CREATE TABLE IF NOT EXISTS invitations (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Test data: one fire department (password: test123)
+-- Eigene Hydranten pro Feuerwehr
+CREATE TABLE IF NOT EXISTS department_hydrants (
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    department_id INT NOT NULL,
+    lat           DECIMAL(10,7) NOT NULL,
+    lng           DECIMAL(10,7) NOT NULL,
+    type          ENUM('underground','pillar','wall','pond','other') NOT NULL DEFAULT 'underground',
+    ref           VARCHAR(100) NULL,
+    address       VARCHAR(255) NULL,
+    notes         VARCHAR(500) NULL,
+    source        ENUM('manual','import') NOT NULL DEFAULT 'manual',
+    external_id   VARCHAR(100) NULL,
+    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (department_id) REFERENCES fire_departments(id) ON DELETE CASCADE,
+    UNIQUE KEY uq_dept_external (department_id, external_id),
+    INDEX idx_dept   (department_id),
+    INDEX idx_coords (lat, lng)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 INSERT IGNORE INTO fire_departments (id, name, password_hash) VALUES
 (1, 'FW Teststadt', '$2y$10$RnzhDX5kc58QO57pxP5qVuz47nJhQhySyZnde.tKDkmYZ.PqGNPyG');

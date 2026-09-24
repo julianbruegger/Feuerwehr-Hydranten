@@ -116,6 +116,23 @@ php php/cli/prewarm_hydrants.php 46.9 8.1 47.2 8.6  # custom bbox: S W N E
 
 The deploy workflow protects `cache/` and `uploads/` from `rsync --delete`, so deployments keep the cache.
 
+### 🧯 Own hydrants (areas without OSM data)
+
+Where OpenStreetMap has no hydrants (e.g. Rothenburg LU), a fire department can add its own under
+**Admin → Eigene Hydranten** (`/admin/hydranten.html`):
+
+- **Import** a file from the water utility / utility cadastre: **CSV**, **GeoJSON** or **INTERLIS XTF**
+  (e.g. `SIA405_Wasser_2015`, class `Hydrant`). Coordinates in WGS84, **LV95** or LV03 are detected and
+  converted automatically; hydrants marked as out of service are skipped. Re-importing updates records
+  by their source ID instead of duplicating them.
+- **Place, move or delete** single hydrants directly on the map.
+
+These hydrants are stored in `department_hydrants` (created automatically, see
+[`config/schema_hydrants.sql`](config/schema_hydrants.sql)) and are **only returned to logged-in members of that
+fire department** — suitable for restricted data such as the canton of Lucerne's *Werkinformationen Wasser*
+(access level "beschränkt öffentlich"). On the map they appear with a yellow ring, are included in the
+nearest-hydrant list and hide OSM hydrants within 10 m.
+
 ### 📧 E-mail (SMTP) configuration
 
 Registration and invitations send e-mail via SMTP. The deploy workflow writes these
