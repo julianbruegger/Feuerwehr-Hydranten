@@ -24,46 +24,7 @@ const DEFAULTS = {
 };
 
 const VIEWPORT_MIN_ZOOM = 13;    // Unterhalb dieses Zooms keine Viewport-Hydranten
-const VIEWPORT_MAX_RADIUS = 3000; // Maximaler Radius für Viewport-Abruf in Metern
-
-/** Overpass API Endpunkte (Hauptserver + Mirrors für Fallback) */
-const OVERPASS_ENDPOINTS = [
-    'https://overpass-api.de/api/interpreter',
-    'https://overpass.kumi.systems/api/interpreter',
-    'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
-];
-let _overpassIndex = 0;
-
-async function overpassFetch(query, { retries = 2 } = {}) {
-    for (let attempt = 0; attempt <= retries; attempt++) {
-        const url = OVERPASS_ENDPOINTS[_overpassIndex % OVERPASS_ENDPOINTS.length];
-        try {
-            const res = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: 'data=' + encodeURIComponent(query),
-            });
-            if (res.status === 429 || res.status === 504 || res.status === 502) {
-                // Zum nächsten Mirror wechseln
-                _overpassIndex++;
-                if (attempt < retries) {
-                    await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
-                    continue;
-                }
-                throw new Error(`HTTP ${res.status}`);
-            }
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            return await res.json();
-        } catch (e) {
-            if (attempt < retries) {
-                _overpassIndex++;
-                await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
-            } else {
-                throw e;
-            }
-        }
-    }
-}
+const VIEWPORT_MAX_TILES = 48;   // Sicherheitsgrenze für Kacheln pro Viewport-Abruf
 
 async function serverProxyFetch(type, pos, radius) {
     const params = new URLSearchParams({
@@ -78,41 +39,200 @@ async function serverProxyFetch(type, pos, radius) {
 }
 
 // ─────────────────────────────────────────
-// Hydrant-Cache (localStorage, 24h TTL)
+// Hydranten-Kacheln (Speicher + IndexedDB)
 // ─────────────────────────────────────────
+//
+// Hydranten werden in festen Kacheln à TILE_DEG° geladen (identisch zum Server,
+// siehe php/includes/hydrant_tiles.php). Dadurch teilen sich Standortsuche,
+// Kartenausschnitt und alle Radien denselben Cache. Kacheln werden dauerhaft in
+// IndexedDB gespeichert; ältere Kacheln werden sofort angezeigt und im
+// Hintergrund aktualisiert (stale-while-revalidate).
 
-const CACHE_TTL_MS   = 24 * 60 * 60 * 1000; // 24 Stunden
-const CACHE_GRID_DEG = 0.005;                // ~500 m Raster-Snap
+const TILE_DEG        = 0.05;                     // ~5.5 × 3.8 km in der Schweiz
+const TILE_FRESH_MS   = 7 * 24 * 60 * 60 * 1000;  // danach im Hintergrund aktualisieren
+const TILE_MAX_AGE_MS = 180 * 24 * 60 * 60 * 1000; // danach verwerfen
+const TILE_BATCH      = 16;                       // Max. Kacheln pro Server-Anfrage
 
-function _cacheKey(pos, radius) {
-    const lat = Math.round(pos.lat / CACHE_GRID_DEG) * CACHE_GRID_DEG;
-    const lng = Math.round(pos.lng / CACHE_GRID_DEG) * CACHE_GRID_DEG;
-    return `hw_hydrants_${lat.toFixed(3)}_${lng.toFixed(3)}_${radius}`;
+const _tileMem      = new Map(); // key → { ts, elements }
+const _tileInflight = new Map(); // key → Promise<{ ts, elements } | null>
+let _tileDbPromise  = null;
+
+function tileKeyFor(lat, lng) {
+    return `${Math.floor(lng / TILE_DEG)}_${Math.floor(lat / TILE_DEG)}`;
 }
 
-function getCachedHydrants(pos, radius) {
-    try {
-        const raw = localStorage.getItem(_cacheKey(pos, radius));
-        if (!raw) return null;
-        const { ts, elements } = JSON.parse(raw);
-        if (Date.now() - ts > CACHE_TTL_MS) return null;
-        return elements;
-    } catch { return null; }
-}
-
-function setCachedHydrants(pos, radius, elements) {
-    try {
-        // Alte Einträge bereinigen um localStorage-Platz freizuhalten
-        for (const key of Object.keys(localStorage)) {
-            if (!key.startsWith('hw_hydrants_')) continue;
-            try {
-                const { ts } = JSON.parse(localStorage.getItem(key));
-                if (Date.now() - ts > CACHE_TTL_MS) localStorage.removeItem(key);
-            } catch { localStorage.removeItem(key); }
+function tileKeysForBounds(s, w, n, e) {
+    const keys = [];
+    for (let y = Math.floor(s / TILE_DEG); y <= Math.floor(n / TILE_DEG); y++) {
+        for (let x = Math.floor(w / TILE_DEG); x <= Math.floor(e / TILE_DEG); x++) {
+            keys.push(`${x}_${y}`);
         }
-        localStorage.setItem(_cacheKey(pos, radius), JSON.stringify({ ts: Date.now(), elements }));
-    } catch { /* localStorage voll oder deaktiviert – ignorieren */ }
+    }
+    return keys;
 }
+
+function tileKeysForRadius(pos, radiusM) {
+    const dLat = radiusM / 111320;
+    const dLng = radiusM / (111320 * Math.max(0.01, Math.cos(toRad(pos.lat))));
+    return tileKeysForBounds(pos.lat - dLat, pos.lng - dLng, pos.lat + dLat, pos.lng + dLng);
+}
+
+function _tileDb() {
+    if (!_tileDbPromise) {
+        _tileDbPromise = new Promise((resolve) => {
+            try {
+                const req = indexedDB.open('hw-hydrants', 1);
+                req.onupgradeneeded = () => req.result.createObjectStore('tiles');
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => resolve(null);
+                req.onblocked = () => resolve(null);
+            } catch { resolve(null); }
+        });
+    }
+    return _tileDbPromise;
+}
+
+async function _tileDbGetMany(keys) {
+    const db = await _tileDb();
+    const out = new Map();
+    if (!db || keys.length === 0) return out;
+    return new Promise((resolve) => {
+        try {
+            const store = db.transaction('tiles', 'readonly').objectStore('tiles');
+            let pending = keys.length;
+            keys.forEach((key) => {
+                const req = store.get(key);
+                req.onsuccess = () => {
+                    if (req.result) out.set(key, req.result);
+                    if (--pending === 0) resolve(out);
+                };
+                req.onerror = () => { if (--pending === 0) resolve(out); };
+            });
+        } catch { resolve(out); }
+    });
+}
+
+async function _tileDbPut(entries) {
+    const db = await _tileDb();
+    if (!db) return;
+    try {
+        const store = db.transaction('tiles', 'readwrite').objectStore('tiles');
+        entries.forEach(([key, tile]) => store.put(tile, key));
+    } catch { /* Speicher voll oder deaktiviert – ignorieren */ }
+}
+
+/** Lädt Kacheln vom Server (in Batches) und legt sie in Speicher + IndexedDB ab. */
+function _fetchTilesFromServer(keys, { reload = false } = {}) {
+    const promises = [];
+    for (let i = 0; i < keys.length; i += TILE_BATCH) {
+        const batch = keys.slice(i, i + TILE_BATCH);
+        const p = fetch(`/api/hydrants.php?tiles=${batch.join(',')}`, reload ? { cache: 'reload' } : {})
+            .then((res) => {
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                return res.json();
+            })
+            .then((data) => {
+                const tiles = data.tiles || {};
+                const fetchedAt = Date.now();
+                const entries = Object.entries(tiles).map(([key, t]) => {
+                    // Frische ab Abrufzeit zählen (der Server hat eine eigene, längere Frist)
+                    const tile = { ts: fetchedAt, elements: t.elements || [] };
+                    _tileMem.set(key, tile);
+                    return [key, tile];
+                });
+                _tileDbPut(entries);
+                return tiles;
+            });
+        batch.forEach((key) => {
+            const kp = p.then(() => _tileMem.get(key) || null).catch(() => null);
+            _tileInflight.set(key, kp);
+            kp.finally(() => { if (_tileInflight.get(key) === kp) _tileInflight.delete(key); });
+            promises.push(kp);
+        });
+    }
+    return promises;
+}
+
+/**
+ * Liefert Hydranten-Kacheln. `onTile(key, elements)` wird aufgerufen, sobald
+ * eine Kachel verfügbar ist (sofort aus dem Cache, später vom Server), damit
+ * die Karte schrittweise rendern kann.
+ * Rückgabe: { tiles: Map<key, elements>, fromCache: boolean, failed: string[] }
+ */
+async function getHydrantTiles(keys, { onTile = null, force = false } = {}) {
+    const tiles = new Map();
+    const deliver = (key, tile) => {
+        tiles.set(key, tile.elements);
+        if (onTile) onTile(key, tile.elements);
+    };
+    const now = Date.now();
+    const toLoad = [];
+    const toRevalidate = [];
+
+    // 1. Speicher
+    const needDb = [];
+    keys.forEach((key) => {
+        const t = _tileMem.get(key);
+        if (t && !force) {
+            deliver(key, t);
+            if (now - t.ts > TILE_FRESH_MS) toRevalidate.push(key);
+        } else {
+            needDb.push(key);
+        }
+    });
+
+    // 2. IndexedDB
+    if (needDb.length && !force) {
+        const fromDb = await _tileDbGetMany(needDb);
+        needDb.forEach((key) => {
+            const t = fromDb.get(key);
+            if (t && now - t.ts < TILE_MAX_AGE_MS) {
+                _tileMem.set(key, t);
+                deliver(key, t);
+                if (now - t.ts > TILE_FRESH_MS) toRevalidate.push(key);
+            } else {
+                toLoad.push(key);
+            }
+        });
+    } else {
+        toLoad.push(...needDb);
+    }
+
+    const fromCache = toLoad.length === 0;
+
+    // 3. Server (laufende Anfragen für dieselbe Kachel wiederverwenden)
+    const waits = [];
+    const fresh = [];
+    toLoad.forEach((key) => {
+        const inflight = !force && _tileInflight.get(key);
+        if (inflight) waits.push(inflight.then((t) => [key, t]));
+        else fresh.push(key);
+    });
+    _fetchTilesFromServer(fresh, { reload: force }).forEach((p, i) => {
+        waits.push(p.then((t) => [fresh[i], t]));
+    });
+    const failed = [];
+    await Promise.all(waits.map((p) => p.then(([key, t]) => {
+        if (t) deliver(key, t); else failed.push(key);
+    })));
+
+    // 4. Veraltete Kacheln im Hintergrund aktualisieren
+    const revalidate = toRevalidate.filter((key) => !_tileInflight.has(key));
+    if (revalidate.length) {
+        _fetchTilesFromServer(revalidate).forEach((p, i) => {
+            p.then((t) => { if (t && onTile) onTile(revalidate[i], t.elements); });
+        });
+    }
+
+    return { tiles, fromCache, failed };
+}
+
+// Alte localStorage-Hydranten-Caches (vor dem Kachel-Cache) entfernen
+try {
+    Object.keys(localStorage)
+        .filter((key) => key.startsWith('hw_hydrants_'))
+        .forEach((key) => localStorage.removeItem(key));
+} catch { /* ignorieren */ }
 
 // ─────────────────────────────────────────
 // App-Zustand
@@ -137,6 +257,8 @@ const state = {
     },
     showAllHydrants: false,
     viewportHydrantIds: new Set(), // OSM-Node-IDs bereits als Viewport-Marker geladen
+    viewportTiles: new Map(),      // Kachel-Key → { layer, ids, elements, useIcons }
+    viewportWantedTiles: new Set(), // Kacheln im aktuellen (erweiterten) Kartenausschnitt
     fireMode: false,        // Ist Brandpositions-Modus aktiv?
     selectedHydrantId: null,        // Aktuell ausgewählter Hydrant
     watchId: null,         // GPS-Watch-ID
@@ -292,6 +414,8 @@ function initMap() {
 
     // Viewport-Hydranten: beim Verschieben/Zoomen nachladen
     state.map.on('moveend', onMapMoveEnd);
+    // Sofort Hydranten der Startansicht zeigen (nicht erst nach GPS-Fix)
+    loadViewportHydrants();
 
 }
 
@@ -476,39 +600,47 @@ function getSourcePosition() {
     return state.firePos || state.userPos;
 }
 
-async function fetchHydrants() {
+let _hydrantRequestId = 0;
+
+async function fetchHydrants({ force = false } = {}) {
+    const requestId = ++_hydrantRequestId;
     const pos = getSourcePosition();
     if (!pos) return;
 
     const radius = parseInt(dom.searchRadius.value, 10) || DEFAULTS.SEARCH_RADIUS_M;
 
-    dom.btnRefresh.classList.add('loading');
-
-    // Cache prüfen
-    const cached = getCachedHydrants(pos, radius);
-    if (cached) {
-        setStatus('Bereit (Cache)', 'ready');
-        dom.btnRefresh.classList.remove('loading');
-        processHydrantData(cached);
-    } else {
-        setStatus('Hydranten laden…', 'loading');
-
-        try {
-            const data = await serverProxyFetch('hydrants', pos, radius);
-            setCachedHydrants(pos, radius, data.elements || []);
-            processHydrantData(data.elements || []);
-            setStatus(state.firePos ? 'Brandposition gesetzt' : 'Bereit', state.firePos ? 'fire' : 'ready');
-        } catch (error) {
-            console.error({ error }, 'Overpass-Abruf fehlgeschlagen');
-            showEmptyState(`Fehler beim Laden: ${error.message}`);
-            setStatus('Ladefehler', 'error');
-        } finally {
-            dom.btnRefresh.classList.remove('loading');
-        }
-    }
-
-    // Barrieren + Brücken separat im Hintergrund laden (eigener Radius-Cap)
+    // Barrieren + Brücken parallel im Hintergrund laden (eigener Radius-Cap)
     fetchBarriers(pos, Math.min(radius, 1500));
+
+    dom.btnRefresh.classList.add('loading');
+    setStatus('Hydranten laden…', 'loading');
+
+    try {
+        const { tiles, fromCache, failed } = await getHydrantTiles(tileKeysForRadius(pos, radius), { force });
+        // Inzwischen neuere Anfrage gestartet (z.B. Brandposition verschoben)?
+        if (requestId !== _hydrantRequestId) return;
+        if (tiles.size === 0) throw new Error('Server nicht erreichbar');
+
+        const elements = [];
+        tiles.forEach((els) => els.forEach((el) => {
+            if (haversineDistance(pos, { lat: el.lat, lng: el.lon }) <= radius) elements.push(el);
+        }));
+        processHydrantData(elements);
+
+        if (failed.length) {
+            setStatus('Teilweise geladen', 'error');
+        } else if (state.firePos) {
+            setStatus('Brandposition gesetzt', 'fire');
+        } else {
+            setStatus(fromCache ? 'Bereit (Cache)' : 'Bereit', 'ready');
+        }
+    } catch (error) {
+        console.error({ error }, 'Hydranten-Abruf fehlgeschlagen');
+        showEmptyState(`Fehler beim Laden: ${error.message}`);
+        setStatus('Ladefehler', 'error');
+    } finally {
+        if (requestId === _hydrantRequestId) dom.btnRefresh.classList.remove('loading');
+    }
 }
 
 async function fetchBarriers(pos, radius) {
@@ -904,49 +1036,111 @@ function toggleAllHydrants() {
 // Viewport-basiertes Hydrant-Nachladen
 // ─────────────────────────────────────────
 
+// Kacheln werden einzeln gerendert, sobald sie verfügbar sind (Cache → sofort).
+// Unterhalb VIEWPORT_ICON_ZOOM werden leichte Canvas-Punkte statt SVG-Icons
+// gezeichnet, damit auch tausende Hydranten flüssig bleiben.
+
+const VIEWPORT_ICON_ZOOM = 16;
+let _viewportRenderer = null;
+
+function _viewportUseIcons() {
+    return state.map.getZoom() >= VIEWPORT_ICON_ZOOM;
+}
+
 function clearViewportHydrantMarkers() {
-    state.markers.viewportHydrants.forEach(m => state.map.removeLayer(m));
+    state.viewportTiles.forEach(t => state.map.removeLayer(t.layer));
+    state.viewportTiles.clear();
     state.markers.viewportHydrants = [];
     state.viewportHydrantIds.clear();
+}
+
+function _rebuildViewportIndex() {
+    state.markers.viewportHydrants = [];
+    state.viewportHydrantIds.clear();
+    state.viewportTiles.forEach(t => {
+        t.layer.eachLayer(m => state.markers.viewportHydrants.push(m));
+        t.ids.forEach(id => state.viewportHydrantIds.add(id));
+    });
+}
+
+function renderViewportTile(key, elements) {
+    const wanted = state.viewportWantedTiles;
+    if (!wanted.has(key)) return;
+
+    const useIcons = _viewportUseIcons();
+    const existing = state.viewportTiles.get(key);
+    if (existing && existing.elements === elements && existing.useIcons === useIcons) return;
+    if (existing) state.map.removeLayer(existing.layer);
+
+    if (!_viewportRenderer) _viewportRenderer = L.canvas({ padding: 0.5 });
+
+    const layer = L.layerGroup();
+    const ids = [];
+    elements.forEach(el => {
+        const h = { id: el.id, lat: el.lat, lng: el.lon, tags: el.tags || {} };
+        const marker = useIcons
+            ? L.marker([h.lat, h.lng], { icon: ALL_HYDRANT_ICON, zIndexOffset: -100 })
+            : L.circleMarker([h.lat, h.lng], {
+                renderer: _viewportRenderer,
+                radius: 4,
+                weight: 1.5,
+                color: '#ffffff',
+                fillColor: '#e63946',
+                fillOpacity: 0.95,
+            });
+        // Falls der Hydrant auch in der Standortliste ist, dessen Objekt verwenden (Popup/Distanz)
+        marker.on('click', () => selectHydrant(state.hydrants.find(x => x.id === h.id) || h));
+        layer.addLayer(marker);
+        ids.push(el.id);
+    });
+    layer.addTo(state.map);
+    state.viewportTiles.set(key, { layer, ids, elements, useIcons });
+    _rebuildViewportIndex();
 }
 
 let _viewportDebounce = null;
 
 function onMapMoveEnd() {
     clearTimeout(_viewportDebounce);
-    _viewportDebounce = setTimeout(loadViewportHydrants, 400);
+    _viewportDebounce = setTimeout(loadViewportHydrants, 150);
 }
 
 async function loadViewportHydrants() {
     if (state.map.getZoom() < VIEWPORT_MIN_ZOOM) {
+        state.viewportWantedTiles = new Set();
         clearViewportHydrantMarkers();
         return;
     }
 
-    const bounds = state.map.getBounds();
-    const center = bounds.getCenter();
-    const radiusM = Math.min(
-        Math.round(L.latLng(center.lat, center.lng).distanceTo(bounds.getNorthEast())),
-        VIEWPORT_MAX_RADIUS
-    );
+    // Sichtbarer Bereich + Rand, damit beim Verschieben schon Daten da sind
+    const b = state.map.getBounds().pad(0.25);
+    const keys = tileKeysForBounds(b.getSouth(), b.getWest(), b.getNorth(), b.getEast());
+    if (keys.length > VIEWPORT_MAX_TILES) return;
+    state.viewportWantedTiles = new Set(keys);
 
+    // Kacheln ausserhalb des Bereichs entfernen, Darstellungsart ggf. wechseln
+    const useIcons = _viewportUseIcons();
+    let changed = false;
+    state.viewportTiles.forEach((t, key) => {
+        if (!state.viewportWantedTiles.has(key)) {
+            state.map.removeLayer(t.layer);
+            state.viewportTiles.delete(key);
+            changed = true;
+        } else if (t.useIcons !== useIcons) {
+            renderViewportTile(key, t.elements);
+        }
+    });
+    if (changed) _rebuildViewportIndex();
+
+    // Mitte zuerst laden – dort schaut der Benutzer hin
+    const c = state.map.getCenter();
+    const centerKey = tileKeyFor(c.lat, c.lng);
+    keys.sort((k1, k2) => (k1 === centerKey ? -1 : k2 === centerKey ? 1 : 0));
+
+    const missing = keys.filter(k => !state.viewportTiles.has(k));
+    if (missing.length === 0) return;
     try {
-        const data = await serverProxyFetch('hydrants', { lat: center.lat, lng: center.lng }, radiusM);
-        const positionIds = new Set(state.hydrants.map(h => h.id));
-
-        (data.elements || []).forEach(el => {
-            if (state.viewportHydrantIds.has(el.id)) return;
-            if (positionIds.has(el.id)) return;
-
-            state.viewportHydrantIds.add(el.id);
-            const h = { id: el.id, lat: el.lat, lng: el.lon, tags: el.tags || {} };
-            const marker = L.marker([h.lat, h.lng], {
-                icon: ALL_HYDRANT_ICON,
-                zIndexOffset: -100,
-            }).addTo(state.map);
-            marker.on('click', () => selectHydrant(h));
-            state.markers.viewportHydrants.push(marker);
-        });
+        await getHydrantTiles(missing, { onTile: renderViewportTile });
     } catch (e) {
         console.warn('[Viewport] Hydranten laden fehlgeschlagen:', e);
     }
@@ -1213,7 +1407,7 @@ function initEventListeners() {
     // Hydranten neu laden
     dom.btnToggleAll.addEventListener('click', toggleAllHydrants);
     dom.btnBasemap.addEventListener('click', toggleBasemap);
-    dom.btnRefresh.addEventListener('click', fetchHydrants);
+    dom.btnRefresh.addEventListener('click', () => fetchHydrants({ force: true }));
 
     // Admin / Login button
     const hwToken = localStorage.getItem('hw_token');

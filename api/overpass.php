@@ -1,11 +1,12 @@
 <?php
 /**
  * Hydrantennavigator – Overpass API Proxy with Server-Side Cache
+ * (Hydranten lädt die Karte über /api/hydrants.php – Kachel-Cache.)
  * GET /api/overpass.php?type=hydrants&lat=47.04&lng=8.30[&radius=2000]
  * GET /api/overpass.php?type=barriers&lat=47.04&lng=8.30[&radius=2000]
  *
  * Designed for Hostpoint shared hosting (PHP + cURL, no persistent process).
- * Caches Overpass responses server-side for 24 hours to reduce API load
+ * Caches Overpass responses server-side for 7 days to reduce API load
  * and share cache across all clients hitting the same grid cell.
  */
 
@@ -49,7 +50,11 @@ $latStr    = number_format($snapLat, 3, '.', '');
 $lngStr    = number_format($snapLng, 3, '.', '');
 $cachePath = $cacheDir . "{$type}_{$latStr}_{$lngStr}_{$radius}.json";
 
-if (file_exists($cachePath) && (time() - filemtime($cachePath)) < 86400) {
+// Hydranten/Barrieren ändern sich selten → 7 Tage frisch; ältere Einträge
+// werden nur noch als Fallback verwendet, wenn Overpass nicht erreichbar ist.
+$hasStale = file_exists($cachePath);
+if ($hasStale && (time() - filemtime($cachePath)) < 7 * 86400) {
+    header('Cache-Control: public, max-age=86400');
     echo file_get_contents($cachePath);
     exit;
 }
@@ -118,6 +123,10 @@ foreach ($overpass_mirrors as $mirror) {
     }
 }
 
+if ($raw === null && $hasStale) {
+    echo file_get_contents($cachePath);
+    exit;
+}
 if ($raw === null) {
     http_response_code(502);
     exit(json_encode(['error' => 'Overpass nicht erreichbar'], JSON_UNESCAPED_UNICODE));
@@ -126,4 +135,5 @@ if ($raw === null) {
 // ── Cache and return ──────────────────────────────────────────────────────────
 
 file_put_contents($cachePath, $raw, LOCK_EX);
+header('Cache-Control: public, max-age=86400');
 echo $raw;

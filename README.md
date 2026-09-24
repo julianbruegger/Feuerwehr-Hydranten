@@ -53,7 +53,7 @@
 ├── info.html             # In-app help / instructions
 ├── login.php             # Auth pages
 ├── style.css
-├── api/                  # Public API (hoses calculator, Overpass proxy)
+├── api/                  # Public API (hydrant tiles, hoses calculator, Overpass proxy)
 ├── php/                  # Backend: API + admin API + shared includes (db, auth)
 ├── admin/                # Admin panel (UI + APIs)
 ├── config/               # SQL schemas, migrations, helpers (db.php is gitignored)
@@ -95,6 +95,26 @@ The backend is written for PHP shared hosting and needs no server management:
      [`migration_v4.sql`](config/migration_v4.sql) for the e-mail onboarding tables).
 3. Create `config/db.php` with your database credentials (and SMTP settings, see below).
 4. Ensure `cURL` is enabled (default on Hostpoint) — it's used for Overpass/OSRM requests.
+
+### 🧯 Hydrant cache
+
+Hydrants are loaded in fixed **tiles of 0.05° (~5.5 × 3.8 km)** via `GET /api/hydrants.php?tiles=x_y,…`
+(`x = floor(lng / 0.05)`, `y = floor(lat / 0.05)`), so every user, map view and search radius shares the same cache:
+
+| Layer | Lifetime |
+|---|---|
+| Server (`cache/tiles/*.json`) | 30 days fresh; older tiles are refreshed from Overpass, or served as-is if Overpass is down |
+| Browser (IndexedDB) | Shown instantly; refreshed in the background after 7 days, dropped after 180 days |
+
+Missing tiles in one request are fetched with a **single** Overpass query. To avoid ever waiting on Overpass,
+pre-warm the cache (e.g. monthly via a Hostpoint cron job):
+
+```bash
+php php/cli/prewarm_hydrants.php                    # all of Switzerland
+php php/cli/prewarm_hydrants.php 46.9 8.1 47.2 8.6  # custom bbox: S W N E
+```
+
+The deploy workflow protects `cache/` and `uploads/` from `rsync --delete`, so deployments keep the cache.
 
 ### 📧 E-mail (SMTP) configuration
 
