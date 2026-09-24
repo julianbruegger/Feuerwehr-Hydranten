@@ -104,8 +104,13 @@ function hydrantTileWrite(string $key, array $elements, int $ts): void
  */
 function hydrantOverpassQuery(string $oql, int $timeout = 30): ?array
 {
+    // Schweizer Mirror zuerst (schnell, nur CH-Daten – ausserhalb liefert er
+    // leer und die nächsten Mirrors werden gefragt). overpass-api.de ist oft
+    // überlastet und von manchen Netzen nur per IPv6 erreichbar.
     $mirrors = [
+        'https://overpass.osm.ch/api/interpreter',
         'https://overpass-api.de/api/interpreter',
+        'https://overpass.openstreetmap.fr/api/interpreter',
         'https://overpass.kumi.systems/api/interpreter',
         'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
     ];
