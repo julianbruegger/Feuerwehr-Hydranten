@@ -43,7 +43,7 @@ function validateToken($token): ?array
 
     $db = getDb();
     $stmt = $db->prepare(
-        'SELECT id, department_id, is_admin FROM auth_tokens
+        'SELECT id, department_id, user_id, is_admin FROM auth_tokens
          WHERE token = ? AND expires_at > NOW() AND revoked_at IS NULL
          LIMIT 1'
     );
@@ -57,9 +57,20 @@ function validateToken($token): ?array
 
     return [
         'dept_id'  => $row['department_id'] !== null ? (int) $row['department_id'] : null,
+        'user_id'  => $row['user_id'] !== null ? (int) $row['user_id'] : null,
         'is_admin' => (bool) $row['is_admin'],
         'token_id' => (int) $row['id'],
     ];
+}
+
+/**
+ * Scopes an existing token to a department (after the user creates or joins
+ * one during onboarding), so no re-login is needed.
+ */
+function setTokenDepartment(int $tokenId, int $departmentId): void
+{
+    getDb()->prepare('UPDATE auth_tokens SET department_id = ? WHERE id = ?')
+           ->execute([$departmentId, $tokenId]);
 }
 
 /**
@@ -108,16 +119,17 @@ function createToken(
     bool $isAdmin = false,
     string $source = 'password',
     ?string $label = null,
-    ?string $expiresAt = null
+    ?string $expiresAt = null,
+    ?int $userId = null
 ): array {
     $token     = bin2hex(random_bytes(32));
     $expiresAt = $expiresAt ?? date('Y-m-d H:i:s', strtotime('+365 days'));
 
     $db = getDb();
     $db->prepare(
-        'INSERT INTO auth_tokens (department_id, is_admin, source, label, token, expires_at)
-         VALUES (?, ?, ?, ?, ?, ?)'
-    )->execute([$departmentId, $isAdmin ? 1 : 0, $source, $label, $token, $expiresAt]);
+        'INSERT INTO auth_tokens (department_id, user_id, is_admin, source, label, token, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)'
+    )->execute([$departmentId, $userId, $isAdmin ? 1 : 0, $source, $label, $token, $expiresAt]);
 
     return ['token' => $token, 'id' => (int) $db->lastInsertId()];
 }

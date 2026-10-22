@@ -112,7 +112,7 @@
     <form id="registerForm" autocomplete="on">
       <div class="field">
         <label for="name" data-i18n="reg.name">Name der Feuerwehr</label>
-        <input type="text" id="name" name="organization" data-i18n-attr="placeholder:reg.namePh" required />
+        <input type="text" id="name" name="name" autocomplete="name" data-i18n-attr="placeholder:reg.namePh" required />
       </div>
       <div class="field">
         <label for="email" data-i18n="reg.email">E-Mail</label>
@@ -140,6 +140,10 @@
 
   <script src="/i18n.js"></script>
   <script>
+    // Carry an invite code (from an invitation link) across registration.
+    const _code = new URLSearchParams(location.search).get('code');
+    if (_code) localStorage.setItem('hw_pending_code', _code);
+
     const form = document.getElementById('registerForm');
     const btn = document.getElementById('submitBtn');
     const errorMsg = document.getElementById('errorMsg');

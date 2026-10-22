@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0f0f14" />
+  <title>🚒 Feuerwehr wählen – Hydrantennavigator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0f0f14; --surface: #18181f; --card: #22222d;
+      --red: #e63946; --green: #4ade80; --amber: #f4a261;
+      --text: #f1f1f5; --muted: #8a8a9a; --border: rgba(255, 255, 255, 0.08);
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text);
+      min-height: 100dvh; display: flex; flex-direction: column; align-items: center;
+      justify-content: center; padding: 24px 20px;
+    }
+    .lang-toggle {
+      position: fixed; top: 16px; right: 16px; background: var(--card);
+      border: 1px solid var(--border); color: var(--muted);
+      font: 600 13px 'Inter', sans-serif; padding: 8px 13px; border-radius: 999px; cursor: pointer;
+    }
+    .lang-toggle:hover { color: var(--text); }
+
+    .head { text-align: center; margin-bottom: 24px; max-width: 640px; }
+    .head .logo { font-size: 40px; }
+    .head h1 { font-size: 22px; font-weight: 800; margin-top: 6px; }
+    .head p { color: var(--muted); font-size: 14px; margin-top: 6px; }
+
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; width: 100%; max-width: 720px; }
+    .card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 18px;
+      padding: 26px 22px; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5); display: flex; flex-direction: column;
+    }
+    .card .ico { font-size: 30px; margin-bottom: 10px; }
+    .card h2 { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+    .card p { color: var(--muted); font-size: 13.5px; line-height: 1.55; margin-bottom: 16px; flex: 1; }
+
+    label { display: block; font-size: 12px; font-weight: 600; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+    input {
+      width: 100%; background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+      color: var(--text); font: 400 16px 'Inter', sans-serif; padding: 12px 14px; outline: none;
+      transition: border-color 0.2s; margin-bottom: 12px;
+    }
+    input:focus { border-color: var(--red); }
+
+    .btn {
+      width: 100%; padding: 13px; border: none; border-radius: 12px; color: #fff;
+      font: 700 15px 'Inter', sans-serif; cursor: pointer; transition: opacity 0.2s, transform 0.15s;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn--create { background: var(--red); }
+    .btn--join { background: var(--green); color: #06210f; }
+
+    .msg { border-radius: 10px; padding: 9px 12px; font-size: 12.5px; margin-top: 4px; display: none; }
+    .msg.error { background: rgba(230, 57, 70, 0.12); border: 1px solid var(--red); color: var(--red); }
+
+    .foot { margin-top: 22px; font-size: 13px; color: var(--muted); }
+    .foot a { color: var(--text); text-decoration: none; font-weight: 600; cursor: pointer; }
+  </style>
+</head>
+
+<body>
+  <button class="lang-toggle" data-lang-toggle aria-label="Sprache wechseln / Switch language">
+    <span data-lang-label>EN</span>
+  </button>
+
+  <div class="head">
+    <div class="logo">🚒</div>
+    <h1 id="greeting" data-i18n="onboarding.title">Willkommen</h1>
+    <p data-i18n="onboarding.sub">Erstelle eine Feuerwehr oder tritt einer bestehenden bei.</p>
+  </div>
+
+  <div class="cards">
+    <!-- Create -->
+    <div class="card">
+      <div class="ico">🏢</div>
+      <h2 data-i18n="onboarding.create.title">Feuerwehr erstellen</h2>
+      <p data-i18n="onboarding.create.desc">Lege eine neue Feuerwehr an. Du wirst automatisch deren Administrator.</p>
+      <label for="deptName" data-i18n="onboarding.create.label">Name der Feuerwehr</label>
+      <input type="text" id="deptName" data-i18n-attr="placeholder:onboarding.create.namePh" placeholder="z. B. FW Luzern" />
+      <button class="btn btn--create" id="btnCreate" data-i18n="onboarding.create.btn">Erstellen</button>
+      <div class="msg error" id="createErr"></div>
+    </div>
+
+    <!-- Join -->
+    <div class="card">
+      <div class="ico">✉️</div>
+      <h2 data-i18n="onboarding.join.title">Feuerwehr beitreten</h2>
+      <p data-i18n="onboarding.join.desc">Du hast einen Einladungscode oder -link erhalten? Gib den Code hier ein.</p>
+      <label for="joinCode" data-i18n="onboarding.join.label">Einladungscode</label>
+      <input type="text" id="joinCode" data-i18n-attr="placeholder:onboarding.join.codePh" placeholder="Code aus der E-Mail" autocomplete="off" />
+      <button class="btn btn--join" id="btnJoin" data-i18n="onboarding.join.btn">Beitreten</button>
+      <div class="msg error" id="joinErr"></div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <a id="logoutLink" data-i18n="onboarding.logout">Abmelden</a>
+  </div>
+
+  <script src="/i18n.js"></script>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const token = localStorage.getItem('hw_token');
+    if (!token) {
+      // Carry an invite code across the login/register detour.
+      if (params.get('code')) localStorage.setItem('hw_pending_code', params.get('code'));
+      location.replace('/login.php');
+    }
+
+    const T = (k) => (window.I18N ? I18N.t(k) : k);
+
+    // Personalised greeting.
+    const userName = localStorage.getItem('hw_user_name');
+    function refreshGreeting() {
+      const g = document.getElementById('greeting');
+      g.textContent = userName ? (T('onboarding.greeting') + ' ' + userName) : T('onboarding.title');
+    }
+    refreshGreeting();
+    document.addEventListener('i18n:changed', refreshGreeting);
+
+    // Prefill invite code from ?code= or a code stashed before login.
+    const codeParam = params.get('code') || localStorage.getItem('hw_pending_code');
+    if (codeParam) document.getElementById('joinCode').value = codeParam;
+
+    async function post(path, body) {
+      const res = await fetch(path, {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.status === 401) { localStorage.clear(); location.replace('/login.php'); return null; }
+      return { ok: res.ok, data: await res.json() };
+    }
+
+    function onSuccess(data) {
+      localStorage.setItem('hw_dept_name', data.dept_name);
+      localStorage.setItem('hw_has_dept', '1');
+      localStorage.removeItem('hw_pending_code');
+      location.replace('/admin/');
+    }
+
+    // Create a department
+    document.getElementById('btnCreate').addEventListener('click', async () => {
+      const btn = document.getElementById('btnCreate');
+      const err = document.getElementById('createErr');
+      const name = document.getElementById('deptName').value.trim();
+      err.style.display = 'none';
+      if (!name) { err.textContent = T('onboarding.errName'); err.style.display = 'block'; return; }
+      btn.disabled = true; btn.textContent = T('onboarding.creating');
+      const r = await post('/api/department-create', { name });
+      btn.disabled = false; btn.textContent = T('onboarding.create.btn');
+      if (!r) return;
+      if (!r.ok || !r.data.ok) { err.textContent = r.data.error || T('onboarding.errGeneric'); err.style.display = 'block'; return; }
+      onSuccess(r.data);
+    });
+
+    // Join a department
+    document.getElementById('btnJoin').addEventListener('click', async () => {
+      const btn = document.getElementById('btnJoin');
+      const err = document.getElementById('joinErr');
+      const code = document.getElementById('joinCode').value.trim();
+      err.style.display = 'none';
+      if (!/^[a-f0-9]{64}$/.test(code)) { err.textContent = T('onboarding.errCode'); err.style.display = 'block'; return; }
+      btn.disabled = true; btn.textContent = T('onboarding.joining');
+      const r = await post('/api/department-join', { code });
+      btn.disabled = false; btn.textContent = T('onboarding.join.btn');
+      if (!r) return;
+      if (!r.ok || !r.data.ok) { err.textContent = r.data.error || T('onboarding.errGeneric'); err.style.display = 'block'; return; }
+      onSuccess(r.data);
+    });
+
+    document.getElementById('logoutLink').addEventListener('click', async () => {
+      try {
+        await fetch('/logout.php', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token }),
+        });
+      } catch { /* ignore */ }
+      localStorage.clear();
+      location.replace('/login.php');
+    });
+  </script>
+</body>
+
+</html>

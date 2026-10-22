@@ -1,15 +1,15 @@
 <?php
 /**
- * register.php – Create a new fire department (self-service onboarding).
+ * register.php – Create a personal account (self-service onboarding).
  *
  * POST JSON { name, email, password }
- *   → creates a fire_departments row (unverified),
+ *   → creates a users row (unverified),
  *   → e-mails a verification link (verify-email.php?t=…),
  *   → returns { ok: true }.  In dev (no SMTP configured) the link is also
  *     returned as `dev_link` and written to cache/mail.log.
  *
- * Reuses the production auth stack (config/auth_helper.php) so tokens created
- * later on verification are consistent with login.php / magic-login.php.
+ * After verifying, the user lands on /onboarding.html to create or join a
+ * department. Reuses the production auth stack (config/auth_helper.php).
  */
 
 require_once __DIR__ . '/../../config/auth_helper.php';
@@ -21,7 +21,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $body = json_decode(file_get_contents('php://input'), true) ?: [];
 $name  = trim($body['name'] ?? '');
-$email = trim($body['email'] ?? '');
+$email = strtolower(trim($body['email'] ?? ''));
 $pass  = (string) ($body['password'] ?? '');
 
 // ── Validation ───────────────────────────────────────────────────────────────
@@ -34,40 +34,38 @@ if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
 if (strlen($pass) < 8) {
     jsonResponse(['error' => 'Das Passwort muss mindestens 8 Zeichen lang sein.'], 400);
 }
-if (strtolower($name) === 'admin') {
-    jsonResponse(['error' => 'Dieser Name ist reserviert.'], 409);
-}
 
 $db = getDb();
 
-// Name is the login identifier — must be unique.
-$stmt = $db->prepare('SELECT id FROM fire_departments WHERE name = ? LIMIT 1');
-$stmt->execute([$name]);
+// E-mail is the login identifier — must be unique.
+$stmt = $db->prepare('SELECT id FROM users WHERE email = ? LIMIT 1');
+$stmt->execute([$email]);
 if ($stmt->fetch()) {
-    jsonResponse(['error' => 'Diese Feuerwehr ist bereits registriert.'], 409);
+    jsonResponse(['error' => 'Diese E-Mail-Adresse ist bereits registriert.'], 409);
 }
 
-// ── Create the (unverified) department ───────────────────────────────────────
+// ── Create the (unverified) user ─────────────────────────────────────────────
 $hash = password_hash($pass, PASSWORD_BCRYPT);
-$db->prepare('INSERT INTO fire_departments (name, email, password_hash) VALUES (?, ?, ?)')
+$db->prepare('INSERT INTO users (name, email, password_hash) VALUES (?, ?, ?)')
    ->execute([$name, $email, $hash]);
-$deptId = (int) $db->lastInsertId();
+$userId = (int) $db->lastInsertId();
 
 // ── Verification token + link ────────────────────────────────────────────────
 $token     = bin2hex(random_bytes(32));
 $expiresAt = date('Y-m-d H:i:s', strtotime('+2 days'));
 $db->prepare(
-    'INSERT INTO email_verifications (department_id, email, token, expires_at) VALUES (?, ?, ?, ?)'
-)->execute([$deptId, $email, $token, $expiresAt]);
+    'INSERT INTO email_verifications (user_id, email, token, expires_at) VALUES (?, ?, ?, ?)'
+)->execute([$userId, $email, $token, $expiresAt]);
 
 $link = appBaseUrl() . '/verify-email.php?t=' . $token;
 
 $html = mailTemplate(
     'E-Mail bestätigen / Confirm your e-mail',
-    '<p>Danke für die Registrierung von <strong>' . htmlspecialchars($name, ENT_QUOTES, 'UTF-8') .
-    '</strong> beim Hydrantennavigator.</p>' .
-    '<p>Bitte bestätige deine E-Mail-Adresse, um den Zugang zu aktivieren.</p>' .
-    '<p style="color:#8a8a9a;font-size:13px">Thanks for registering. Please confirm your e-mail address to activate access.</p>',
+    '<p>Hallo ' . htmlspecialchars($name, ENT_QUOTES, 'UTF-8') . ',</p>' .
+    '<p>danke für deine Registrierung beim Hydrantennavigator. Bitte bestätige deine ' .
+    'E-Mail-Adresse. Danach kannst du eine Feuerwehr erstellen oder einer beitreten.</p>' .
+    '<p style="color:#8a8a9a;font-size:13px">Please confirm your e-mail address. ' .
+    'Afterwards you can create a fire department or join one.</p>',
     'E-Mail bestätigen / Confirm',
     $link
 );
@@ -79,7 +77,6 @@ if (!mailerIsConfigured()) {
     // Dev convenience: surface the link so the flow is testable without SMTP.
     $resp['dev_link'] = $link;
 } elseif (!$sent) {
-    // Account exists but the mail failed — let the user know they can retry later.
     $resp['warning'] = 'E-Mail konnte nicht gesendet werden. Bitte später erneut versuchen.';
 }
 
