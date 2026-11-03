@@ -87,31 +87,94 @@ function hydrantTileWrite(string $key, array $elements, int $ts): void
     }
 }
 
-/** POST an die Overpass-Mirrors, gibt dekodierte Antwort oder null zurück. */
-function hydrantOverpassQuery(string $oql, int $timeout = 30): ?array
+const HYDRANT_OVERPASS_BUDGET_S = 18;  // Max. Gesamtzeit für Overpass pro Web-Request
+const HYDRANT_OVERPASS_BACKOFF_S = 90; // Pause nach komplettem Overpass-Ausfall
+const HYDRANT_LOCK_WAIT_S        = 3;  // Max. Wartezeit auf eine laufende Abfrage
+
+/**
+ * Schaltet beim Web-Aufruf das PHP-Zeitlimit hoch (soweit erlaubt) und sorgt
+ * dafür, dass ein trotzdem eintretender Timeout/Fatal Error als JSON-Antwort
+ * statt als leere 500-Seite beim Client ankommt.
+ */
+function hydrantApiGuard(): void
 {
+    @set_time_limit(HYDRANT_OVERPASS_BUDGET_S + 15);
+    register_shutdown_function(function () {
+        $err = error_get_last();
+        if (!$err || !in_array($err['type'], [E_ERROR, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR], true)) return;
+        error_log('[hydrants] Fatal: ' . $err['message'] . ' in ' . $err['file'] . ':' . $err['line']);
+        if (headers_sent()) return;
+        http_response_code(503);
+        header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-store');
+        header('Retry-After: 30');
+        echo json_encode(['error' => 'Server überlastet, bitte erneut versuchen'], JSON_UNESCAPED_UNICODE);
+    });
+}
+
+/** Datei, in der ein Overpass-Ausfall vermerkt wird (Circuit Breaker). */
+function hydrantOverpassBackoffFile(): string
+{
+    return hydrantTileDir() . '.overpass.backoff';
+}
+
+/** true, wenn Overpass vor Kurzem komplett ausgefallen ist (nur Web-Requests). */
+function hydrantOverpassInBackoff(): bool
+{
+    if (PHP_SAPI === 'cli') return false;
+    $until = (int) @file_get_contents(hydrantOverpassBackoffFile());
+    return $until > time();
+}
+
+/**
+ * POST an die Overpass-Mirrors, gibt dekodierte Antwort oder null zurück.
+ * `$budget` ist die Gesamtzeit (Sekunden) über alle Mirrors – so kann ein
+ * hängender Mirror den Request nicht über das PHP-Zeitlimit treiben.
+ */
+function hydrantOverpassQuery(string $oql, int $budget = HYDRANT_OVERPASS_BUDGET_S): ?array
+{
+    if (hydrantOverpassInBackoff()) return null;
+
     $mirrors = [
         'https://overpass-api.de/api/interpreter',
-        'https://overpass.kumi.systems/api/interpreter',
+        'https://overpass.private.coffee/api/interpreter',
         'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+        'https://overpass.kumi.systems/api/interpreter',
     ];
+    $deadline = microtime(true) + $budget;
     foreach ($mirrors as $mirror) {
+        $left = (int) floor($deadline - microtime(true));
+        if ($left < 3) break;
         $ch = curl_init($mirror);
         curl_setopt_array($ch, [
             CURLOPT_POST           => true,
             CURLOPT_POSTFIELDS     => 'data=' . urlencode($oql),
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_CONNECTTIMEOUT => 5,
-            CURLOPT_TIMEOUT        => $timeout,
+            CURLOPT_CONNECTTIMEOUT => min(4, $left),
+            CURLOPT_TIMEOUT        => $left,
             CURLOPT_ENCODING       => '',
-            CURLOPT_USERAGENT      => 'Hydrantennavigator/1.0',
+            CURLOPT_USERAGENT      => 'Hydrantennavigator/1.0 (+https://feuerwehr.julian-bruegger.ch)',
         ]);
         $raw  = curl_exec($ch);
         $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $cerr = curl_error($ch);
         curl_close($ch);
-        if ($code !== 200 || !$raw) continue;
+        if ($code !== 200 || !$raw) {
+            error_log("[hydrants] Overpass {$mirror}: HTTP {$code} {$cerr}");
+            continue;
+        }
         $data = json_decode($raw, true);
-        if (isset($data['elements'])) return $data;
+        if (isset($data['elements'])) {
+            @unlink(hydrantOverpassBackoffFile());
+            return $data;
+        }
+        error_log("[hydrants] Overpass {$mirror}: ungültige Antwort");
+    }
+
+    // Alle Mirrors ausgefallen → eine Weile gar nicht mehr fragen, damit
+    // wartende Requests nicht alle PHP-Worker blockieren (→ 503 von Apache).
+    if (PHP_SAPI !== 'cli') {
+        @file_put_contents(hydrantOverpassBackoffFile(), (string) (time() + HYDRANT_OVERPASS_BACKOFF_S));
     }
     return null;
 }
@@ -121,7 +184,7 @@ function hydrantOverpassQuery(string $oql, int $timeout = 30): ?array
  * übergebenen Kacheln (Kacheln ohne Hydranten werden als leer gecacht).
  * Gibt [key => elements] zurück oder null bei Fehler.
  */
-function hydrantTilesFetchFromOverpass(array $keys, int $timeout = 30): ?array
+function hydrantTilesFetchFromOverpass(array $keys, int $timeout = HYDRANT_OVERPASS_BUDGET_S): ?array
 {
     if (!$keys) return [];
     $s = INF; $w = INF; $n = -INF; $e = -INF;
@@ -133,7 +196,7 @@ function hydrantTilesFetchFromOverpass(array $keys, int $timeout = 30): ?array
         $e = max($e, ($x + 1) * HYDRANT_TILE_DEG);
     }
     $bbox = sprintf('%.4f,%.4f,%.4f,%.4f', $s, $w, $n, $e);
-    $oql  = "[out:json][timeout:" . max(10, $timeout - 5) . "][bbox:{$bbox}];node[\"emergency\"=\"fire_hydrant\"];out body qt;";
+    $oql  = "[out:json][timeout:" . max(10, $timeout - 3) . "][bbox:{$bbox}];node[\"emergency\"=\"fire_hydrant\"];out body qt;";
 
     $data = hydrantOverpassQuery($oql, $timeout);
     if ($data === null) return null;
@@ -185,13 +248,23 @@ function hydrantTilesGet(array $keys): array
         }
     }
 
+    if ($toFetch && hydrantOverpassInBackoff()) {
+        // Overpass ist gerade ausgefallen → sofort mit Cache-Daten antworten
+        foreach ($toFetch as $key) {
+            if (isset($stale[$key])) $result[$key] = $stale[$key];
+        }
+        $toFetch = [];
+    }
+
     if ($toFetch) {
         // Gleichzeitige Anfragen serialisieren (schont Overpass-Rate-Limit und
-        // verhindert, dass dieselbe Kachel mehrfach geladen wird).
+        // verhindert, dass dieselbe Kachel mehrfach geladen wird). Nur kurz
+        // warten – sonst stauen sich die PHP-Worker hinter einer langsamen Abfrage.
         $lock = @fopen(hydrantTileDir() . '.overpass.lock', 'c');
         $locked = false;
         if ($lock) {
-            for ($i = 0; $i < 40 && !($locked = flock($lock, LOCK_EX | LOCK_NB)); $i++) {
+            $tries = HYDRANT_LOCK_WAIT_S * 4;
+            for ($i = 0; $i < $tries && !($locked = flock($lock, LOCK_EX | LOCK_NB)); $i++) {
                 usleep(250000);
             }
         }
@@ -205,6 +278,14 @@ function hydrantTilesGet(array $keys): array
             } else {
                 $still[] = $key;
             }
+        }
+
+        if ($still && $lock && !$locked) {
+            // Anderer Request lädt gerade – nicht parallel Overpass belasten
+            foreach ($still as $key) {
+                if (isset($stale[$key])) $result[$key] = $stale[$key];
+            }
+            $still = [];
         }
 
         if ($still) {

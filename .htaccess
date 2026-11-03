@@ -1,6 +1,13 @@
 Options -Indexes
 RewriteEngine On
 
+# Die Karte braucht GPS: Der Hoster setzt standardmässig
+# "Permissions-Policy: geolocation=()", was jeden Standortzugriff blockiert.
+# Hier für die eigene Origin wieder erlauben (überschreibt den Server-Header).
+<IfModule mod_headers.c>
+    Header always set Permissions-Policy "camera=(), microphone=(), geolocation=(self)"
+</IfModule>
+
 # Pass Authorization header through to PHP (Apache strips it by default)
 RewriteRule ^ - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 

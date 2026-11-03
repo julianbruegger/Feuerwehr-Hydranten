@@ -601,6 +601,7 @@ function getSourcePosition() {
 }
 
 let _hydrantRequestId = 0;
+const HYDRANT_RETRY_MS = 30000;
 
 async function fetchHydrants({ force = false } = {}) {
     const requestId = ++_hydrantRequestId;
@@ -636,8 +637,12 @@ async function fetchHydrants({ force = false } = {}) {
         }
     } catch (error) {
         console.error({ error }, 'Hydranten-Abruf fehlgeschlagen');
-        showEmptyState(`Fehler beim Laden: ${error.message}`);
+        showEmptyState(`Fehler beim Laden: ${error.message} – neuer Versuch in ${HYDRANT_RETRY_MS / 1000} s`);
         setStatus('Ladefehler', 'error');
+        // Server/Overpass vorübergehend überlastet → automatisch erneut versuchen
+        setTimeout(() => {
+            if (requestId === _hydrantRequestId) fetchHydrants();
+        }, HYDRANT_RETRY_MS);
     } finally {
         if (requestId === _hydrantRequestId) dom.btnRefresh.classList.remove('loading');
     }
