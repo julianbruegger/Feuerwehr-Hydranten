@@ -8,6 +8,8 @@ build/
 
 # Cache
 cache/*.json
+cache/*.lock
+cache/*.log*
 cache/tiles/
 
 # Uploads
@@ -23,3 +25,8 @@ playwright-screenshots/
 test-admin.js
 test-satellite.js
 test-viewport.js
+
+# Statische Kacheln (werden von .github/workflows/hydrant-data.yml erzeugt)
+data/hydrants/
+data/barriers/
+data/manifest.json

@@ -38,6 +38,12 @@
   <main class="map-container">
     <div id="map"></div>
 
+    <!-- Hinweis, solange Hydranten-Kacheln im Kartenausschnitt nachgeladen werden -->
+    <div class="map-loading" id="mapLoading" role="status" aria-live="polite" hidden>
+      <span class="map-loading__spinner" aria-hidden="true"></span>
+      Hydranten werden geladen…
+    </div>
+
     <!-- Floating action buttons (right side) -->
     <div class="fab-group">
       <button class="fab" id="btnInfo" onclick="window.location.href='/info.html'" title="Erklärung & Anleitung"

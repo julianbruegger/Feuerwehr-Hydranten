@@ -2,6 +2,10 @@
 /**
  * Hydranten-Kachel-Cache vorwärmen (nur CLI, z.B. als monatlicher Cronjob).
  *
+ * Innerhalb der Schweiz gibt es statische Kacheln (data/hydrants/, wöchentlich
+ * per GitHub Action erzeugt) – diese gelten als frisch und werden übersprungen.
+ * Sinnvoll ist das Skript daher v.a. für Grenzgebiete / das Ausland.
+ *
  *   php php/cli/prewarm_hydrants.php                    # ganze Schweiz
  *   php php/cli/prewarm_hydrants.php 46.9 8.1 47.2 8.6  # eigene BBox (S W N E)
  *
@@ -34,15 +38,14 @@ for ($by = $y0; $by <= $y1; $by += BLOCK) {
         $keys = [];
         for ($y = $by; $y < min($by + BLOCK, $y1 + 1); $y++) {
             for ($x = $bx; $x < min($bx + BLOCK, $x1 + 1); $x++) {
-                $tile = hydrantTileRead(hydrantTileKey($x, $y));
-                if (!$tile || (time() - $tile['ts']) >= HYDRANT_TILE_FRESH_S) {
+                if (!hydrantTileIsFresh(hydrantTileRead(hydrantTileKey($x, $y)))) {
                     $keys[] = hydrantTileKey($x, $y);
                 }
             }
         }
         if (!$keys) { $skipped++; continue; }
 
-        $res = hydrantTilesFetchFromOverpass($keys, 90);
+        $res = hydrantTilesFetchFromOverpass($keys, 90.0);
         if ($res === null) {
             $failed++;
             fwrite(STDERR, "Block {$bx}_{$by}: Overpass-Fehler\n");

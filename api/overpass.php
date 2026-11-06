@@ -8,6 +8,9 @@
  * Designed for Hostpoint shared hosting (PHP + cURL, no persistent process).
  * Caches Overpass responses server-side for 7 days to reduce API load
  * and share cache across all clients hitting the same grid cell.
+ * Within Switzerland the map loads barriers from static tiles
+ * (/data/barriers/{x}_{y}.json); this proxy is the fallback elsewhere.
+ * Overpass is queried with a fixed time budget (php/includes/overpass.php).
  */
 
 header('Content-Type: application/json; charset=utf-8');
@@ -45,54 +48,30 @@ $snapLng = round($lng / 0.005) * 0.005;
 
 // ── Cache ─────────────────────────────────────────────────────────────────────
 
+require_once __DIR__ . '/../php/includes/overpass.php';
+
+const PROXY_FRESH_S            = 7 * 86400;
+const PROXY_SYNC_BUDGET_S      = 18.0;
+const PROXY_BACKGROUND_BUDGET_S = 25.0;
+
 $cacheDir  = __DIR__ . '/../cache/';
 $latStr    = number_format($snapLat, 3, '.', '');
 $lngStr    = number_format($snapLng, 3, '.', '');
 $cachePath = $cacheDir . "{$type}_{$latStr}_{$lngStr}_{$radius}.json";
 
-// Hydranten/Barrieren ändern sich selten → 7 Tage frisch; ältere Einträge
-// werden nur noch als Fallback verwendet, wenn Overpass nicht erreichbar ist.
-$hasStale = file_exists($cachePath);
-if ($hasStale && (time() - filemtime($cachePath)) < 7 * 86400) {
-    header('Cache-Control: public, max-age=86400');
-    echo file_get_contents($cachePath);
-    exit;
-}
-
 if (!is_dir($cacheDir)) {
     mkdir($cacheDir, 0750, true);
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function curl_get(string $url, ?string $post_body = null): ?string
-{
-    $ch = curl_init($url);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT        => 35,
-        CURLOPT_SSL_VERIFYPEER => true,
-        CURLOPT_USERAGENT      => 'Hydrantennavigator/1.0',
-    ]);
-    if ($post_body !== null) {
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $post_body);
-    }
-    $raw  = curl_exec($ch);
-    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-    if (!$raw || $code !== 200) return null;
-    return $raw;
-}
-
 // ── Build Overpass query ──────────────────────────────────────────────────────
 
+$qt = (int) PROXY_SYNC_BUDGET_S - 2;
 if ($type === 'hydrants') {
-    $oql = "[out:json][timeout:20];node[\"emergency\"=\"fire_hydrant\"](around:{$radius},{$snapLat},{$snapLng});out body;";
+    $oql = "[out:json][timeout:{$qt}];node[\"emergency\"=\"fire_hydrant\"](around:{$radius},{$snapLat},{$snapLng});out body;";
 } else {
     $barrierRadius = min($radius, 1500);
     $oql = <<<OQL
-[out:json][timeout:30];
+[out:json][timeout:{$qt}];
 (
   way["waterway"~"^(river|stream|canal)$"](around:{$barrierRadius},{$snapLat},{$snapLng});
   way["railway"~"^(rail|tram|subway|light_rail|narrow_gauge)$"](around:{$barrierRadius},{$snapLat},{$snapLng});
@@ -103,37 +82,58 @@ out geom;
 OQL;
 }
 
-// ── Overpass mirrors with fallback ────────────────────────────────────────────
-
-$overpass_mirrors = [
-    'https://overpass-api.de/api/interpreter',
-    'https://overpass.kumi.systems/api/interpreter',
-    'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
-];
-
-$raw = null;
-foreach ($overpass_mirrors as $mirror) {
-    $result = curl_get($mirror, 'data=' . urlencode($oql));
-    if ($result !== null) {
-        $decoded = json_decode($result, true);
-        if (isset($decoded['elements'])) {
-            $raw = $result;
-            break;
-        }
-    }
+/** Lädt von Overpass und schreibt den Cache. Gibt die Rohantwort oder null zurück. */
+function proxyFetch(string $oql, string $cachePath, string $type, float $budgetS): ?string
+{
+    $res = overpassQuery($oql, $budgetS);
+    overpassLog(sprintf(
+        'proxy type=%s ms=%d %s%s',
+        $type,
+        $res['ms'],
+        $res['raw'] !== null ? "ok mirror={$res['mirror']}" : 'FAIL',
+        $res['errors'] ? ' errors=' . implode(' | ', $res['errors']) : ''
+    ));
+    if ($res['raw'] === null) return null;
+    $tmp = $cachePath . '.' . getmypid() . '.tmp';
+    if (@file_put_contents($tmp, $res['raw']) !== false) @rename($tmp, $cachePath);
+    return $res['raw'];
 }
 
-if ($raw === null && $hasStale) {
-    echo file_get_contents($cachePath);
+/** Antwort senden und (mit PHP-FPM) die Verbindung schliessen. */
+function proxySend(string $body, string $cacheControl): void
+{
+    header('Cache-Control: ' . $cacheControl);
+    header('Content-Length: ' . strlen($body));
+    echo $body;
+    if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
+}
+
+// ── Aus dem Cache liefern ─────────────────────────────────────────────────────
+// Hydranten/Barrieren ändern sich selten → 7 Tage frisch. Ältere Einträge
+// werden sofort geliefert und (mit PHP-FPM) nach der Antwort aktualisiert.
+
+if (is_file($cachePath)) {
+    $fresh = (time() - filemtime($cachePath)) < PROXY_FRESH_S;
+    proxySend((string) file_get_contents($cachePath), $fresh ? 'public, max-age=86400' : 'no-cache');
+    if (!$fresh && function_exists('fastcgi_finish_request')) {
+        ignore_user_abort(true);
+        @set_time_limit((int) PROXY_BACKGROUND_BUDGET_S + 15);
+        $lock = @fopen($cachePath . '.lock', 'c');
+        if ($lock && flock($lock, LOCK_EX | LOCK_NB)) {
+            proxyFetch($oql, $cachePath, $type, PROXY_BACKGROUND_BUDGET_S);
+            flock($lock, LOCK_UN);
+        }
+        if ($lock) fclose($lock);
+    }
     exit;
 }
+
+// ── Kein Cache: synchron mit Zeitbudget laden ─────────────────────────────────
+
+$raw = proxyFetch($oql, $cachePath, $type, PROXY_SYNC_BUDGET_S);
 if ($raw === null) {
-    http_response_code(502);
+    http_response_code(504);
+    header('Cache-Control: no-store');
     exit(json_encode(['error' => 'Overpass nicht erreichbar'], JSON_UNESCAPED_UNICODE));
 }
-
-// ── Cache and return ──────────────────────────────────────────────────────────
-
-file_put_contents($cachePath, $raw, LOCK_EX);
-header('Cache-Control: public, max-age=86400');
-echo $raw;
+proxySend($raw, 'public, max-age=86400');
