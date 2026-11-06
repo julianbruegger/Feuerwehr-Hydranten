@@ -1,0 +1,29 @@
+# Statische Hydranten-/Barrieren-Kacheln für die ganze Schweiz.
+# Erzeugt und hochgeladen von .github/workflows/hydrant-data.yml
+# (hydrants/{x}_{y}.json, barriers/{x}_{y}.json, manifest.json).
+#
+# Werden direkt von Apache ausgeliefert – kein PHP, kein Overpass.
+
+Options -Indexes
+
+# Eigene Rewrite-Engine: Die SPA-Fallback-Regel der Root-.htaccess gilt hier
+# nicht, fehlende Kacheln liefern 404 statt index.html.
+RewriteEngine On
+
+<IfModule mod_mime.c>
+    AddType application/json .json
+</IfModule>
+
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE application/json
+</IfModule>
+
+<IfModule mod_headers.c>
+    Header set Access-Control-Allow-Origin "*"
+    # Die App hängt ?v=<Datenversion> an jede Kachel-URL → lange cachebar.
+    Header set Cache-Control "public, max-age=2592000"
+    # Das Manifest bestimmt die aktuelle Version → immer revalidieren (ETag/304).
+    <Files "manifest.json">
+        Header set Cache-Control "no-cache"
+    </Files>
+</IfModule>

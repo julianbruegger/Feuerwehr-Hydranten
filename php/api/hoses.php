@@ -18,13 +18,14 @@ if ($lat === false || $lng === false || $lat < -90 || $lat > 90 || $lng < -180 |
     jsonError('lat und lng sind Pflichtparameter');
 }
 
-// Hydranten aus dem Kachel-Cache (lädt fehlende Kacheln von Overpass nach)
+// Hydranten aus statischen Kacheln / Kachel-Cache (fehlende Kacheln werden
+// mit festem Zeitbudget von Overpass nachgeladen)
 $radius = max(200, min(5000, (int) $radius));
 $tileKeys = hydrantTilesForRadius($lat, $lng, $radius);
 if (count($tileKeys) > HYDRANT_TILE_MAX_BATCH) {
     jsonError('Radius zu gross');
 }
-$tileRes = hydrantTilesGet($tileKeys);
+$tileRes = hydrantTilesLoad($tileKeys, 18.0);
 if (!$tileRes['tiles']) {
     jsonError('Overpass API nicht erreichbar', 502);
 }

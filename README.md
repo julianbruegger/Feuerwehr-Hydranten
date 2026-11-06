@@ -8,7 +8,7 @@
 
 ## ✨ Features
 
-- **🗺️ Live hydrant map** — Displays nearby fire hydrants on a full-screen [Leaflet](https://leafletjs.com/) map, sourced live from OpenStreetMap via the Overpass API.
+- **🗺️ Live hydrant map** — Displays nearby fire hydrants on a full-screen [Leaflet](https://leafletjs.com/) map, sourced from OpenStreetMap (weekly static tiles for Switzerland, Overpass API elsewhere).
 - **📍 Two search modes** — Search from your **own GPS location** or from a manually **set fire position**.
 - **📏 Hose calculator** — Computes how many hose sections are required to reach the nearest hydrant, using real **road routing** (OSRM) and falling back to straight-line (haversine) distance when routing is unavailable.
 - **⚙️ Configurable** — Adjustable hose length (e.g. 20 m / 25 m) and search radius via a swipe-up bottom sheet.
@@ -32,7 +32,7 @@
 | Frontend | Vanilla JavaScript, HTML, CSS, [Leaflet](https://leafletjs.com/) |
 | Backend | PHP (designed for [Hostpoint](https://www.hostpoint.ch/) shared hosting — no persistent process required) |
 | Database | MariaDB / MySQL |
-| Geodata | OpenStreetMap **Overpass API** (hydrants), **OSRM** (routing) |
+| Geodata | OpenStreetMap via **Geofabrik** extract (static tiles) and **Overpass API** (fallback), **OSRM** (routing) |
 | Local dev | Docker Compose (Apache + PHP + MariaDB) |
 | Testing | Playwright |
 
@@ -54,6 +54,8 @@
 ├── login.php             # Auth pages
 ├── style.css
 ├── api/                  # Public API (hydrant tiles, hoses calculator, Overpass proxy)
+├── data/                 # Static hydrant/barrier tiles (generated, not in git)
+├── tools/hydrant-data/   # Builds the static tiles from an OSM extract
 ├── php/                  # Backend: API + admin API + shared includes (db, auth)
 ├── admin/                # Admin panel (UI + APIs)
 ├── config/               # SQL schemas, migrations, helpers (db.php is gitignored)
@@ -96,25 +98,39 @@ The backend is written for PHP shared hosting and needs no server management:
 3. Create `config/db.php` with your database credentials (and SMTP settings, see below).
 4. Ensure `cURL` is enabled (default on Hostpoint) — it's used for Overpass/OSRM requests.
 
-### 🧯 Hydrant cache
+### 🧯 Hydrant data & cache
 
-Hydrants are loaded in fixed **tiles of 0.05° (~5.5 × 3.8 km)** via `GET /api/hydrants.php?tiles=x_y,…`
-(`x = floor(lng / 0.05)`, `y = floor(lat / 0.05)`), so every user, map view and search radius shares the same cache:
+Hydrants are loaded in fixed **tiles of 0.05° (~5.5 × 3.8 km)**
+(`x = floor(lng / 0.05)`, `y = floor(lat / 0.05)`), so every user, map view and search radius shares the same cache.
+The browser picks the source per tile:
 
-| Layer | Lifetime |
-|---|---|
-| Server (`cache/tiles/*.json`) | 30 days fresh; older tiles are refreshed from Overpass, or served as-is if Overpass is down |
-| Browser (IndexedDB) | Shown instantly; refreshed in the background after 7 days, dropped after 180 days |
+| Source | Used for | Notes |
+|---|---|---|
+| **Static tiles** `data/hydrants/{x}_{y}.json`, `data/barriers/{x}_{y}.json` | All tiles fully inside Switzerland | Built weekly from the Geofabrik OSM extract and served directly by Apache (no PHP, no Overpass). `data/manifest.json` lists the covered tiles and the data version. |
+| `GET /api/hydrants.php?tiles=x_y,…` | Border areas and abroad | Server cache `cache/tiles/*.json` (30 days fresh, stale fallback). Cold tiles are listed in `missing` and loaded from Overpass **after** the response; the client retries them with backoff. |
+| Browser (IndexedDB) | Everything already seen | Shown instantly; static tiles refresh when the data version changes, API tiles after 7 days. |
 
-Missing tiles in one request are fetched with a **single** Overpass query. To avoid ever waiting on Overpass,
-pre-warm the cache (e.g. monthly via a Hostpoint cron job):
+**Static data** is built and uploaded by [`.github/workflows/hydrant-data.yml`](.github/workflows/hydrant-data.yml)
+(Mondays, or *Run workflow* manually; uses the same `Hostpoint` secrets as the deployment). To build it locally
+(needs `osmium-tool` and `pip install shapely`):
 
 ```bash
-php php/cli/prewarm_hydrants.php                    # all of Switzerland
-php php/cli/prewarm_hydrants.php 46.9 8.1 47.2 8.6  # custom bbox: S W N E
+curl -LO https://download.geofabrik.de/europe/switzerland-latest.osm.pbf
+curl -LO https://download.geofabrik.de/europe/switzerland.poly
+tools/hydrant-data/build.sh switzerland-latest.osm.pbf switzerland.poly data
 ```
 
-The deploy workflow protects `cache/` and `uploads/` from `rsync --delete`, so deployments keep the cache.
+**Overpass** is only used for tiles outside the static data and always within a fixed time budget
+(the mirrors are queried staggered; the first valid answer wins — see `php/includes/overpass.php`),
+well below the hosting's ~30 s request limit. Every Overpass call is logged to `cache/overpass.log`,
+and `/api/hydrants.php` returns a `Server-Timing` header (cache hits / cold tiles / Overpass duration).
+To pre-fill the server cache for areas outside the static data:
+
+```bash
+php php/cli/prewarm_hydrants.php 47.5 9.3 47.8 9.8  # custom bbox: S W N E (tiles with static data are skipped)
+```
+
+The deploy workflow protects `cache/`, `uploads/` and the static tiles in `data/` from `rsync --delete`.
 
 ### 📧 E-mail (SMTP) configuration
 

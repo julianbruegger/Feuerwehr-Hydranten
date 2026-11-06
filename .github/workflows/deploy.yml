@@ -80,8 +80,12 @@ jobs:
             --exclude='.git/' \
             --exclude='.github/' \
             --exclude='.claude/' \
+            --exclude='tools/' \
             --filter='P cache/**' \
             --filter='P uploads/**' \
+            --filter='P data/hydrants/**' \
+            --filter='P data/barriers/**' \
+            --filter='P data/manifest.json' \
             -e "ssh -i ~/.ssh/deploy_key -o MACs=hmac-sha2-256 -o StrictHostKeyChecking=no" \
             ./ \
             ${{ secrets.HOSTPOINT_USER }}@${{ secrets.HOSTPOINT_HOST }}:/home/ataciden/www/feuerwehr.julian-bruegger.ch/

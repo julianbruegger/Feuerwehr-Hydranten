@@ -39,27 +39,34 @@ async function serverProxyFetch(type, pos, radius) {
 }
 
 // ─────────────────────────────────────────
-// Hydranten-Kacheln (Speicher + IndexedDB)
+// Hydranten-Kacheln (statisch + Server, Speicher + IndexedDB)
 // ─────────────────────────────────────────
 //
 // Hydranten werden in festen Kacheln à TILE_DEG° geladen (identisch zum Server,
 // siehe php/includes/hydrant_tiles.php). Dadurch teilen sich Standortsuche,
-// Kartenausschnitt und alle Radien denselben Cache. Kacheln werden dauerhaft in
-// IndexedDB gespeichert; ältere Kacheln werden sofort angezeigt und im
-// Hintergrund aktualisiert (stale-while-revalidate).
+// Kartenausschnitt und alle Radien denselben Cache.
+//
+// Quellen:
+//  1. Statische Kacheln /data/hydrants/{x}_{y}.json – ganze Schweiz, wöchentlich
+//     aus OSM erzeugt (.github/workflows/hydrant-data.yml). /data/manifest.json
+//     listet die abgedeckten Kacheln und die Datenversion.
+//  2. /api/hydrants.php – für alle übrigen Kacheln (Grenzgebiete, Ausland).
+//     Kacheln, die der Server noch nicht hat, stehen in "missing"; der Server
+//     lädt sie im Hintergrund und wir fragen nach kurzer Zeit erneut an.
+//
+// Geladene Kacheln werden dauerhaft in IndexedDB gespeichert; ältere Kacheln
+// werden sofort angezeigt und im Hintergrund aktualisiert (stale-while-revalidate).
 
 const TILE_DEG        = 0.05;                     // ~5.5 × 3.8 km in der Schweiz
-const TILE_FRESH_MS   = 7 * 24 * 60 * 60 * 1000;  // danach im Hintergrund aktualisieren
+const TILE_FRESH_MS   = 7 * 24 * 60 * 60 * 1000;  // API-Kacheln: danach im Hintergrund aktualisieren
 const TILE_MAX_AGE_MS = 180 * 24 * 60 * 60 * 1000; // danach verwerfen
 const TILE_BATCH      = 16;                       // Max. Kacheln pro Server-Anfrage
+const TILE_RETRY_MS   = [2000, 4000, 8000, 12000]; // Wartezeiten für "missing"-Kacheln
+const STATIC_DATA_URL = '/data';
 
-const _tileMem      = new Map(); // key → { ts, elements }
+const _tileMem      = new Map(); // key → { ts, elements, v? }
 const _tileInflight = new Map(); // key → Promise<{ ts, elements } | null>
 let _tileDbPromise  = null;
-
-function tileKeyFor(lat, lng) {
-    return `${Math.floor(lng / TILE_DEG)}_${Math.floor(lat / TILE_DEG)}`;
-}
 
 function tileKeysForBounds(s, w, n, e) {
     const keys = [];
@@ -76,6 +83,62 @@ function tileKeysForRadius(pos, radiusM) {
     const dLng = radiusM / (111320 * Math.max(0.01, Math.cos(toRad(pos.lat))));
     return tileKeysForBounds(pos.lat - dLat, pos.lng - dLng, pos.lat + dLat, pos.lng + dLng);
 }
+
+/** Sortiert Kachel-Keys nach Entfernung ihrer Mitte zu lat/lng (nächste zuerst). */
+function sortTileKeysByDistance(keys, lat, lng) {
+    const kx = Math.cos(toRad(lat));
+    const d = (key) => {
+        const [x, y] = key.split('_').map(Number);
+        const dx = ((x + 0.5) * TILE_DEG - lng) * kx;
+        const dy = (y + 0.5) * TILE_DEG - lat;
+        return dx * dx + dy * dy;
+    };
+    return keys.map((k) => [d(k), k]).sort((a, b) => a[0] - b[0]).map(([, k]) => k);
+}
+
+// ── Manifest der statischen Kacheln ──
+
+let _manifestPromise = null;
+
+/** Lädt /data/manifest.json → { v, covered: Set<key> } oder null (dann nur API). */
+function getStaticManifest() {
+    if (!_manifestPromise) {
+        _manifestPromise = (async () => {
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), 4000);
+            try {
+                const res = await fetch(`${STATIC_DATA_URL}/manifest.json`, { signal: ctrl.signal });
+                if (!res.ok) return null;
+                const m = await res.json();
+                if (!m || !m.v || !m.rows || Math.abs(m.tile_deg - TILE_DEG) > 1e-9) return null;
+                const covered = new Set();
+                Object.entries(m.rows).forEach(([y, ranges]) => ranges.forEach(([x0, x1]) => {
+                    for (let x = x0; x <= x1; x++) covered.add(`${x}_${y}`);
+                }));
+                return { v: String(m.v), covered };
+            } catch {
+                return null;
+            } finally {
+                clearTimeout(timer);
+            }
+        })();
+        // Fehlgeschlagen (offline, noch nicht deployt) → später erneut versuchen
+        _manifestPromise.then((m) => { if (!m) setTimeout(() => { _manifestPromise = null; }, 60000); });
+    }
+    return _manifestPromise;
+}
+
+function _isStaticKey(manifest, key) {
+    return !!manifest && manifest.covered.has(key);
+}
+
+/** Statische Kacheln sind aktuell, solange ihre Version dem Manifest entspricht. */
+function _tileIsFresh(manifest, key, tile) {
+    if (_isStaticKey(manifest, key)) return tile.v === manifest.v;
+    return Date.now() - tile.ts < TILE_FRESH_MS;
+}
+
+// ── IndexedDB ──
 
 function _tileDb() {
     if (!_tileDbPromise) {
@@ -113,6 +176,7 @@ async function _tileDbGetMany(keys) {
 }
 
 async function _tileDbPut(entries) {
+    if (!entries.length) return;
     const db = await _tileDb();
     if (!db) return;
     try {
@@ -121,42 +185,91 @@ async function _tileDbPut(entries) {
     } catch { /* Speicher voll oder deaktiviert – ignorieren */ }
 }
 
-/** Lädt Kacheln vom Server (in Batches) und legt sie in Speicher + IndexedDB ab. */
-function _fetchTilesFromServer(keys, { reload = false } = {}) {
-    const promises = [];
-    for (let i = 0; i < keys.length; i += TILE_BATCH) {
-        const batch = keys.slice(i, i + TILE_BATCH);
-        const p = fetch(`/api/hydrants.php?tiles=${batch.join(',')}`, reload ? { cache: 'reload' } : {})
-            .then((res) => {
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                return res.json();
-            })
-            .then((data) => {
-                const tiles = data.tiles || {};
-                const fetchedAt = Date.now();
-                const entries = Object.entries(tiles).map(([key, t]) => {
-                    // Frische ab Abrufzeit zählen (der Server hat eine eigene, längere Frist)
-                    const tile = { ts: fetchedAt, elements: t.elements || [] };
-                    _tileMem.set(key, tile);
-                    return [key, tile];
-                });
-                _tileDbPut(entries);
-                return tiles;
-            });
-        batch.forEach((key) => {
-            const kp = p.then(() => _tileMem.get(key) || null).catch(() => null);
-            _tileInflight.set(key, kp);
-            kp.finally(() => { if (_tileInflight.get(key) === kp) _tileInflight.delete(key); });
-            promises.push(kp);
+function _storeTile(key, tile) {
+    _tileMem.set(key, tile);
+    _tileDbPut([[key, tile]]);
+    return tile;
+}
+
+// ── Laden ──
+
+/** Statische Kachel laden; bei Fehler Fallback auf die API. */
+function _fetchStaticTile(key, manifest, { reload = false } = {}) {
+    return fetch(`${STATIC_DATA_URL}/hydrants/${key}.json?v=${manifest.v}`, reload ? { cache: 'reload' } : {})
+        .then((res) => {
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return res.json();
+        })
+        .then((data) => _storeTile(key, { ts: Date.now(), v: manifest.v, elements: data.elements || [] }))
+        .catch((e) => {
+            console.warn(`[Kachel ${key}] statisch fehlgeschlagen, nutze API`, e);
+            return _fetchApiTiles([key])[0];
         });
-    }
+}
+
+/**
+ * Lädt Kacheln über /api/hydrants.php. Der erste Key (die Kachel, auf die der
+ * Benutzer schaut) wird einzeln angefragt, der Rest in Batches. Kacheln in
+ * "missing" werden mit Backoff erneut angefragt.
+ * Rückgabe: ein Promise pro Key (gleiche Reihenfolge), aufgelöst mit Kachel oder null.
+ */
+function _fetchApiTiles(keys, { reload = false } = {}) {
+    const resolvers = new Map();
+    const promises = keys.map((key) => new Promise((resolve) => resolvers.set(key, resolve)));
+    const settle = (key, tile) => {
+        const resolve = resolvers.get(key);
+        if (resolve) { resolvers.delete(key); resolve(tile); }
+    };
+
+    const run = async (batch, attempt) => {
+        try {
+            const opts = reload && attempt === 0 ? { cache: 'reload' } : {};
+            const res = await fetch(`/api/hydrants.php?tiles=${batch.join(',')}`, opts);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            const fetchedAt = Date.now();
+            Object.entries(data.tiles || {}).forEach(([key, t]) => {
+                if (resolvers.has(key)) settle(key, _storeTile(key, { ts: fetchedAt, elements: t.elements || [] }));
+            });
+        } catch (e) {
+            console.warn('[Kacheln] API-Anfrage fehlgeschlagen', e);
+        }
+        const missing = batch.filter((key) => resolvers.has(key));
+        if (!missing.length) return;
+        if (attempt >= TILE_RETRY_MS.length) {
+            missing.forEach((key) => settle(key, null));
+            return;
+        }
+        setTimeout(() => run(missing, attempt + 1), TILE_RETRY_MS[attempt]);
+    };
+
+    const batches = [];
+    if (keys.length > 1) batches.push([keys[0]]);
+    for (let i = batches.length; i < keys.length; i += TILE_BATCH) batches.push(keys.slice(i, i + TILE_BATCH));
+    batches.forEach((batch) => run(batch, 0));
     return promises;
+}
+
+/** Lädt Kacheln (statisch oder API) und registriert sie als laufende Anfragen. */
+function _fetchTiles(keys, manifest, { reload = false } = {}) {
+    const staticKeys = keys.filter((key) => _isStaticKey(manifest, key));
+    const apiKeys = keys.filter((key) => !_isStaticKey(manifest, key));
+    const byKey = new Map();
+    staticKeys.forEach((key) => byKey.set(key, _fetchStaticTile(key, manifest, { reload })));
+    _fetchApiTiles(apiKeys, { reload }).forEach((p, i) => byKey.set(apiKeys[i], p));
+
+    return keys.map((key) => {
+        const p = byKey.get(key).catch(() => null);
+        _tileInflight.set(key, p);
+        p.finally(() => { if (_tileInflight.get(key) === p) _tileInflight.delete(key); });
+        return p;
+    });
 }
 
 /**
  * Liefert Hydranten-Kacheln. `onTile(key, elements)` wird aufgerufen, sobald
  * eine Kachel verfügbar ist (sofort aus dem Cache, später vom Server), damit
- * die Karte schrittweise rendern kann.
+ * die Karte schrittweise rendern kann. Keys sollten nach Priorität sortiert sein.
  * Rückgabe: { tiles: Map<key, elements>, fromCache: boolean, failed: string[] }
  */
 async function getHydrantTiles(keys, { onTile = null, force = false } = {}) {
@@ -165,42 +278,37 @@ async function getHydrantTiles(keys, { onTile = null, force = false } = {}) {
         tiles.set(key, tile.elements);
         if (onTile) onTile(key, tile.elements);
     };
+    const manifestPromise = getStaticManifest();
     const now = Date.now();
-    const toLoad = [];
-    const toRevalidate = [];
+    const cached = new Map();
 
-    // 1. Speicher
-    const needDb = [];
-    keys.forEach((key) => {
-        const t = _tileMem.get(key);
-        if (t && !force) {
-            deliver(key, t);
-            if (now - t.ts > TILE_FRESH_MS) toRevalidate.push(key);
-        } else {
-            needDb.push(key);
-        }
-    });
-
-    // 2. IndexedDB
-    if (needDb.length && !force) {
-        const fromDb = await _tileDbGetMany(needDb);
-        needDb.forEach((key) => {
-            const t = fromDb.get(key);
-            if (t && now - t.ts < TILE_MAX_AGE_MS) {
-                _tileMem.set(key, t);
-                deliver(key, t);
-                if (now - t.ts > TILE_FRESH_MS) toRevalidate.push(key);
-            } else {
-                toLoad.push(key);
-            }
+    if (!force) {
+        // 1. Speicher
+        const needDb = [];
+        keys.forEach((key) => {
+            const t = _tileMem.get(key);
+            if (t) { cached.set(key, t); deliver(key, t); } else needDb.push(key);
         });
-    } else {
-        toLoad.push(...needDb);
+        // 2. IndexedDB
+        if (needDb.length) {
+            const fromDb = await _tileDbGetMany(needDb);
+            needDb.forEach((key) => {
+                const t = fromDb.get(key);
+                if (t && now - t.ts < TILE_MAX_AGE_MS) {
+                    _tileMem.set(key, t);
+                    cached.set(key, t);
+                    deliver(key, t);
+                }
+            });
+        }
     }
 
+    const manifest = await manifestPromise;
+    const toLoad = keys.filter((key) => !cached.has(key));
+    const toRevalidate = [...cached].filter(([key, t]) => !_tileIsFresh(manifest, key, t)).map(([key]) => key);
     const fromCache = toLoad.length === 0;
 
-    // 3. Server (laufende Anfragen für dieselbe Kachel wiederverwenden)
+    // 3. Laden (laufende Anfragen für dieselbe Kachel wiederverwenden)
     const waits = [];
     const fresh = [];
     toLoad.forEach((key) => {
@@ -208,7 +316,7 @@ async function getHydrantTiles(keys, { onTile = null, force = false } = {}) {
         if (inflight) waits.push(inflight.then((t) => [key, t]));
         else fresh.push(key);
     });
-    _fetchTilesFromServer(fresh, { reload: force }).forEach((p, i) => {
+    _fetchTiles(fresh, manifest, { reload: force }).forEach((p, i) => {
         waits.push(p.then((t) => [fresh[i], t]));
     });
     const failed = [];
@@ -219,12 +327,42 @@ async function getHydrantTiles(keys, { onTile = null, force = false } = {}) {
     // 4. Veraltete Kacheln im Hintergrund aktualisieren
     const revalidate = toRevalidate.filter((key) => !_tileInflight.has(key));
     if (revalidate.length) {
-        _fetchTilesFromServer(revalidate).forEach((p, i) => {
+        _fetchTiles(revalidate, manifest).forEach((p, i) => {
             p.then((t) => { if (t && onTile) onTile(revalidate[i], t.elements); });
         });
     }
 
     return { tiles, fromCache, failed };
+}
+
+// ─────────────────────────────────────────
+// Barrieren-Kacheln (Gewässer, Bahn, Brücken/Tunnel)
+// ─────────────────────────────────────────
+//
+// Innerhalb der Schweiz statisch (/data/barriers/{x}_{y}.json, Format
+// { w: [[lat, lon, lat, lon, …]], r: […], p: […] }), sonst über den Overpass-Proxy.
+
+const _barrierTileMem = new Map(); // key → Promise<tile | null>
+
+function _loadBarrierTile(key, manifest) {
+    const id = `${key}@${manifest.v}`;
+    if (!_barrierTileMem.has(id)) {
+        const p = fetch(`${STATIC_DATA_URL}/barriers/${key}.json?v=${manifest.v}`)
+            .then((res) => (res.ok ? res.json() : null))
+            .catch(() => null);
+        _barrierTileMem.set(id, p);
+        p.then((t) => { if (!t) _barrierTileMem.delete(id); });
+    }
+    return _barrierTileMem.get(id);
+}
+
+/** Lädt statische Barrieren-Kacheln für einen Kreis, oder null (→ Proxy). */
+async function getStaticBarrierTiles(pos, radiusM) {
+    const manifest = await getStaticManifest();
+    const keys = tileKeysForRadius(pos, radiusM);
+    if (!manifest || !keys.every((key) => manifest.covered.has(key))) return null;
+    const tiles = await Promise.all(keys.map((key) => _loadBarrierTile(key, manifest)));
+    return tiles.every(Boolean) ? tiles : null;
 }
 
 // Alte localStorage-Hydranten-Caches (vor dem Kachel-Cache) entfernen
@@ -252,7 +390,6 @@ const state = {
         accuracy: null,         // Genauigkeitskreis
         hydrants: [],           // Leaflet Marker für Hydranten (Top-Ergebnisse)
         allHydrants: [],        // Leaflet Marker für alle Hydranten (Overlay)
-        viewportHydrants: [],   // Leaflet Marker für Viewport-geladene Hydranten
         route: null,            // Leaflet Polyline für Route zum Hydranten
     },
     showAllHydrants: false,
@@ -289,6 +426,7 @@ const dom = {
     searchRadius: document.getElementById('searchRadius'),
     hydrantList: document.getElementById('hydrantList'),
     emptyState: document.getElementById('emptyState'),
+    mapLoading: document.getElementById('mapLoading'),
 };
 
 // ─────────────────────────────────────────
@@ -615,17 +753,40 @@ async function fetchHydrants({ force = false } = {}) {
     dom.btnRefresh.classList.add('loading');
     setStatus('Hydranten laden…', 'loading');
 
+    // Hydranten im Radius aus allen bisher verfügbaren Kacheln
+    const collect = (tileMap) => {
+        const elements = [];
+        tileMap.forEach((els) => els.forEach((el) => {
+            if (haversineDistance(pos, { lat: el.lat, lng: el.lon }) <= radius) elements.push(el);
+        }));
+        return elements;
+    };
+
+    // Schrittweise rendern: Kacheln, die später eintreffen (langsamer Server,
+    // Hintergrund-Aktualisierung), lösen eine gebündelte Neuberechnung aus.
+    const received = new Map();
+    let renderTimer = null;
+    let done = false;
+    const onTile = (key, els) => {
+        received.set(key, els);
+        clearTimeout(renderTimer);
+        renderTimer = setTimeout(() => {
+            if (requestId !== _hydrantRequestId) return;
+            const elements = collect(received);
+            if (elements.length) processHydrantData(elements);
+        }, done ? 300 : 150);
+    };
+
     try {
-        const { tiles, fromCache, failed } = await getHydrantTiles(tileKeysForRadius(pos, radius), { force });
+        const keys = sortTileKeysByDistance(tileKeysForRadius(pos, radius), pos.lat, pos.lng);
+        const { tiles, fromCache, failed } = await getHydrantTiles(keys, { force, onTile });
+        done = true;
+        clearTimeout(renderTimer);
         // Inzwischen neuere Anfrage gestartet (z.B. Brandposition verschoben)?
         if (requestId !== _hydrantRequestId) return;
         if (tiles.size === 0) throw new Error('Server nicht erreichbar');
 
-        const elements = [];
-        tiles.forEach((els) => els.forEach((el) => {
-            if (haversineDistance(pos, { lat: el.lat, lng: el.lon }) <= radius) elements.push(el);
-        }));
-        processHydrantData(elements);
+        processHydrantData(collect(tiles));
 
         if (failed.length) {
             setStatus('Teilweise geladen', 'error');
@@ -645,12 +806,35 @@ async function fetchHydrants({ force = false } = {}) {
 
 async function fetchBarriers(pos, radius) {
     try {
-        const data = await serverProxyFetch('barriers', pos, radius);
-        processBarrierData(data.elements || []);
-        sortAndRenderHydrants(); // Neu rendern mit Barriere-Infos
+        const tiles = await getStaticBarrierTiles(pos, radius);
+        if (tiles) {
+            processBarrierTiles(tiles);
+        } else {
+            const data = await serverProxyFetch('barriers', pos, radius);
+            processBarrierData(data.elements || []);
+        }
+        // Neu rendern mit Barriere-Infos (nur wenn Hydranten schon da sind,
+        // sonst würde kurz "Keine Hydranten" erscheinen)
+        if (state.hydrants.length) sortAndRenderHydrants();
     } catch (e) {
         console.warn('Barrieren konnten nicht geladen werden', e);
     }
+}
+
+/** Statische Barrieren-Kacheln → Segmente (Duplikate an Kachelrändern sind unschädlich). */
+function processBarrierTiles(tiles) {
+    state.barrierSegments = [];
+    state.passwaySegments = [];
+    const addLines = (lines, push) => (lines || []).forEach((c) => {
+        for (let i = 0; i + 3 < c.length; i += 2) {
+            push({ lat1: c[i], lng1: c[i + 1], lat2: c[i + 2], lng2: c[i + 3] });
+        }
+    });
+    tiles.forEach((t) => {
+        addLines(t.w, (seg) => state.barrierSegments.push({ ...seg, type: 'water' }));
+        addLines(t.r, (seg) => state.barrierSegments.push({ ...seg, type: 'rail' }));
+        addLines(t.p, (seg) => state.passwaySegments.push(seg));
+    });
 }
 
 function processHydrantData(elements) {
@@ -773,7 +957,10 @@ function distPointToSegmentM(p, a, b) {
 
 /** Prüft ob am Kreuzungspunkt eine Brücke oder ein Tunnel vorhanden ist (≤ 25 m) */
 function crossingIsPassable(point) {
+    const m = 0.0004; // ~30–45 m: grobe Vorauswahl vor der genauen Distanz
     return state.passwaySegments.some(seg =>
+        Math.min(seg.lat1, seg.lat2) - m <= point.lat && point.lat <= Math.max(seg.lat1, seg.lat2) + m &&
+        Math.min(seg.lng1, seg.lng2) - m <= point.lng && point.lng <= Math.max(seg.lng1, seg.lng2) + m &&
         distPointToSegmentM(point,
             { lat: seg.lat1, lng: seg.lng1 },
             { lat: seg.lat2, lng: seg.lng2 }
@@ -784,7 +971,12 @@ function crossingIsPassable(point) {
 /** Gibt Set mit Barriere-Typen zurück, die den Luftlinienweg kreuzen und keine Brücke/Tunnel haben */
 function getBarrierCrossings(from, to) {
     const types = new Set();
+    const minLat = Math.min(from.lat, to.lat), maxLat = Math.max(from.lat, to.lat);
+    const minLng = Math.min(from.lng, to.lng), maxLng = Math.max(from.lng, to.lng);
     state.barrierSegments.forEach(seg => {
+        // Segmente ausserhalb der Bounding-Box der Luftlinie können sie nicht kreuzen
+        if (Math.max(seg.lat1, seg.lat2) < minLat || Math.min(seg.lat1, seg.lat2) > maxLat ||
+            Math.max(seg.lng1, seg.lng2) < minLng || Math.min(seg.lng1, seg.lng2) > maxLng) return;
         const crossing = getIntersectionPoint(from, to,
             { lat: seg.lat1, lng: seg.lng1 },
             { lat: seg.lat2, lng: seg.lng2 }
@@ -1050,17 +1242,16 @@ function _viewportUseIcons() {
 function clearViewportHydrantMarkers() {
     state.viewportTiles.forEach(t => state.map.removeLayer(t.layer));
     state.viewportTiles.clear();
-    state.markers.viewportHydrants = [];
     state.viewportHydrantIds.clear();
 }
 
-function _rebuildViewportIndex() {
-    state.markers.viewportHydrants = [];
-    state.viewportHydrantIds.clear();
-    state.viewportTiles.forEach(t => {
-        t.layer.eachLayer(m => state.markers.viewportHydrants.push(m));
-        t.ids.forEach(id => state.viewportHydrantIds.add(id));
-    });
+/** Entfernt eine Viewport-Kachel von der Karte und aus dem ID-Index. */
+function _removeViewportTile(key) {
+    const t = state.viewportTiles.get(key);
+    if (!t) return;
+    state.map.removeLayer(t.layer);
+    t.ids.forEach(id => state.viewportHydrantIds.delete(id));
+    state.viewportTiles.delete(key);
 }
 
 function renderViewportTile(key, elements) {
@@ -1070,7 +1261,7 @@ function renderViewportTile(key, elements) {
     const useIcons = _viewportUseIcons();
     const existing = state.viewportTiles.get(key);
     if (existing && existing.elements === elements && existing.useIcons === useIcons) return;
-    if (existing) state.map.removeLayer(existing.layer);
+    if (existing) _removeViewportTile(key);
 
     if (!_viewportRenderer) _viewportRenderer = L.canvas({ padding: 0.5 });
 
@@ -1095,7 +1286,7 @@ function renderViewportTile(key, elements) {
     });
     layer.addTo(state.map);
     state.viewportTiles.set(key, { layer, ids, elements, useIcons });
-    _rebuildViewportIndex();
+    ids.forEach(id => state.viewportHydrantIds.add(id));
 }
 
 let _viewportDebounce = null;
@@ -1105,44 +1296,69 @@ function onMapMoveEnd() {
     _viewportDebounce = setTimeout(loadViewportHydrants, 150);
 }
 
+let _viewportLoadId = 0;
+
+/** Zeigt den Lade-Hinweis, solange sichtbare Kacheln fehlen (erst nach kurzer Verzögerung). */
+function _setViewportLoading(loading) {
+    clearTimeout(_setViewportLoading.timer);
+    if (!dom.mapLoading) return;
+    if (loading) {
+        _setViewportLoading.timer = setTimeout(() => { dom.mapLoading.hidden = false; }, 400);
+    } else {
+        dom.mapLoading.hidden = true;
+    }
+}
+
 async function loadViewportHydrants() {
+    const loadId = ++_viewportLoadId;
     if (state.map.getZoom() < VIEWPORT_MIN_ZOOM) {
         state.viewportWantedTiles = new Set();
         clearViewportHydrantMarkers();
+        _setViewportLoading(false);
         return;
     }
 
     // Sichtbarer Bereich + Rand, damit beim Verschieben schon Daten da sind
     const b = state.map.getBounds().pad(0.25);
     const keys = tileKeysForBounds(b.getSouth(), b.getWest(), b.getNorth(), b.getEast());
-    if (keys.length > VIEWPORT_MAX_TILES) return;
+    if (keys.length > VIEWPORT_MAX_TILES) {
+        _setViewportLoading(false);
+        return;
+    }
     state.viewportWantedTiles = new Set(keys);
 
     // Kacheln ausserhalb des Bereichs entfernen, Darstellungsart ggf. wechseln
     const useIcons = _viewportUseIcons();
-    let changed = false;
-    state.viewportTiles.forEach((t, key) => {
-        if (!state.viewportWantedTiles.has(key)) {
-            state.map.removeLayer(t.layer);
-            state.viewportTiles.delete(key);
-            changed = true;
-        } else if (t.useIcons !== useIcons) {
-            renderViewportTile(key, t.elements);
-        }
+    [...state.viewportTiles].forEach(([key, t]) => {
+        if (!state.viewportWantedTiles.has(key)) _removeViewportTile(key);
+        else if (t.useIcons !== useIcons) renderViewportTile(key, t.elements);
     });
-    if (changed) _rebuildViewportIndex();
 
-    // Mitte zuerst laden – dort schaut der Benutzer hin
+    // Nächste Kacheln zuerst laden – dort schaut der Benutzer hin
     const c = state.map.getCenter();
-    const centerKey = tileKeyFor(c.lat, c.lng);
-    keys.sort((k1, k2) => (k1 === centerKey ? -1 : k2 === centerKey ? 1 : 0));
+    const missing = sortTileKeysByDistance(keys.filter(k => !state.viewportTiles.has(k)), c.lat, c.lng);
+    if (missing.length === 0) {
+        _setViewportLoading(false);
+        return;
+    }
 
-    const missing = keys.filter(k => !state.viewportTiles.has(k));
-    if (missing.length === 0) return;
+    // Lade-Hinweis nur für Kacheln im sichtbaren Bereich (nicht für den Rand)
+    const vb = state.map.getBounds();
+    const visible = new Set(tileKeysForBounds(vb.getSouth(), vb.getWest(), vb.getNorth(), vb.getEast()));
+    const pendingVisible = new Set(missing.filter(k => visible.has(k)));
+    const onTile = (key, elements) => {
+        renderViewportTile(key, elements);
+        pendingVisible.delete(key);
+        if (pendingVisible.size === 0 && loadId === _viewportLoadId) _setViewportLoading(false);
+    };
+    if (pendingVisible.size) _setViewportLoading(true);
+
     try {
-        await getHydrantTiles(missing, { onTile: renderViewportTile });
+        await getHydrantTiles(missing, { onTile });
     } catch (e) {
         console.warn('[Viewport] Hydranten laden fehlgeschlagen:', e);
+    } finally {
+        if (loadId === _viewportLoadId) _setViewportLoading(false);
     }
 }
 

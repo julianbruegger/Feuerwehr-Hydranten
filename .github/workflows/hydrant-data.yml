@@ -1,0 +1,65 @@
+name: Build hydrant data
+
+# Erzeugt statische Hydranten- und Barrieren-Kacheln für die ganze Schweiz aus
+# dem Geofabrik-OSM-Extrakt und lädt sie nach data/ auf den Server. Die Karte
+# lädt diese Dateien direkt – ohne PHP und ohne Overpass (siehe Issue #27).
+
+on:
+  schedule:
+    - cron: '23 2 * * 1'   # montags 02:23 UTC (Geofabrik aktualisiert täglich)
+  workflow_dispatch:
+
+concurrency:
+  group: hydrant-data
+  cancel-in-progress: false
+
+jobs:
+  build-and-upload:
+    runs-on: ubuntu-latest
+    environment: Hostpoint
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install osmium + shapely
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q osmium-tool
+          pip install 'shapely>=2,<3'
+
+      - name: Download Switzerland extract
+        run: |
+          mkdir -p build
+          curl -fsSL --retry 3 -o build/switzerland.osm.pbf https://download.geofabrik.de/europe/switzerland-latest.osm.pbf
+          curl -fsSL --retry 3 -o build/switzerland.poly    https://download.geofabrik.de/europe/switzerland.poly
+          ls -lh build
+
+      - name: Build tiles
+        # Mindestanzahl schützt davor, kaputte/leere Daten hochzuladen
+        run: tools/hydrant-data/build.sh build/switzerland.osm.pbf build/switzerland.poly build/data 20000
+
+      - name: Summary
+        run: |
+          python3 -c "import json; m = json.load(open('build/data/manifest.json')); print(f\"Kacheln: {m['tiles']}, Hydranten: {m['hydrants']}, OSM-Stand: {m['osm_timestamp']}\")" | tee -a "$GITHUB_STEP_SUMMARY"
+          du -sh build/data/hydrants build/data/barriers | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.HOSTPOINT_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.HOSTPOINT_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Upload tiles, then manifest
+        env:
+          REMOTE: ${{ secrets.HOSTPOINT_USER }}@${{ secrets.HOSTPOINT_HOST }}:/home/ataciden/www/feuerwehr.julian-bruegger.ch/data/
+        run: |
+          SSH="ssh -i $HOME/.ssh/deploy_key -o MACs=hmac-sha2-256 -o StrictHostKeyChecking=no"
+          # 1. Kacheln (alte Kacheln werden erst am Ende gelöscht)
+          rsync -rz --checksum --delete-after \
+            --exclude='.htaccess' --exclude='manifest.json' \
+            -e "$SSH" build/data/ "$REMOTE"
+          # 2. Manifest zuletzt – erst jetzt fragen Clients die neue Version an
+          rsync -z --checksum -e "$SSH" build/data/manifest.json "$REMOTE"
