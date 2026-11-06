@@ -10,6 +10,7 @@
  */
 
 require_once __DIR__ . '/../php/includes/hydrant_tiles.php';
+hydrantApiGuard();
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
@@ -34,7 +35,9 @@ if (count($keys) > HYDRANT_TILE_MAX_BATCH) {
 $res = hydrantTilesGet($keys);
 
 if (!$res['tiles']) {
-    http_response_code(502);
+    http_response_code(503);
+    header('Cache-Control: no-store');
+    header('Retry-After: ' . HYDRANT_OVERPASS_BACKOFF_S);
     exit(json_encode(['error' => 'Overpass nicht erreichbar', 'missing' => $res['missing']], JSON_UNESCAPED_UNICODE));
 }
 

@@ -10,6 +10,9 @@
  * and share cache across all clients hitting the same grid cell.
  */
 
+require_once __DIR__ . '/../php/includes/hydrant_tiles.php';
+hydrantApiGuard();
+
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 
@@ -63,36 +66,14 @@ if (!is_dir($cacheDir)) {
     mkdir($cacheDir, 0750, true);
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function curl_get(string $url, ?string $post_body = null): ?string
-{
-    $ch = curl_init($url);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT        => 35,
-        CURLOPT_SSL_VERIFYPEER => true,
-        CURLOPT_USERAGENT      => 'Hydrantennavigator/1.0',
-    ]);
-    if ($post_body !== null) {
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $post_body);
-    }
-    $raw  = curl_exec($ch);
-    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-    if (!$raw || $code !== 200) return null;
-    return $raw;
-}
-
 // ── Build Overpass query ──────────────────────────────────────────────────────
 
 if ($type === 'hydrants') {
-    $oql = "[out:json][timeout:20];node[\"emergency\"=\"fire_hydrant\"](around:{$radius},{$snapLat},{$snapLng});out body;";
+    $oql = "[out:json][timeout:15];node[\"emergency\"=\"fire_hydrant\"](around:{$radius},{$snapLat},{$snapLng});out body;";
 } else {
     $barrierRadius = min($radius, 1500);
     $oql = <<<OQL
-[out:json][timeout:30];
+[out:json][timeout:15];
 (
   way["waterway"~"^(river|stream|canal)$"](around:{$barrierRadius},{$snapLat},{$snapLng});
   way["railway"~"^(rail|tram|subway|light_rail|narrow_gauge)$"](around:{$barrierRadius},{$snapLat},{$snapLng});
@@ -103,32 +84,19 @@ out geom;
 OQL;
 }
 
-// ── Overpass mirrors with fallback ────────────────────────────────────────────
+// ── Overpass (gemeinsamer Helper: Mirrors, Zeitbudget, Circuit Breaker) ─────
 
-$overpass_mirrors = [
-    'https://overpass-api.de/api/interpreter',
-    'https://overpass.kumi.systems/api/interpreter',
-    'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
-];
-
-$raw = null;
-foreach ($overpass_mirrors as $mirror) {
-    $result = curl_get($mirror, 'data=' . urlencode($oql));
-    if ($result !== null) {
-        $decoded = json_decode($result, true);
-        if (isset($decoded['elements'])) {
-            $raw = $result;
-            break;
-        }
-    }
-}
+$data = hydrantOverpassQuery($oql);
+$raw  = $data !== null ? json_encode($data, JSON_UNESCAPED_UNICODE) : null;
 
 if ($raw === null && $hasStale) {
     echo file_get_contents($cachePath);
     exit;
 }
 if ($raw === null) {
-    http_response_code(502);
+    http_response_code(503);
+    header('Cache-Control: no-store');
+    header('Retry-After: ' . HYDRANT_OVERPASS_BACKOFF_S);
     exit(json_encode(['error' => 'Overpass nicht erreichbar'], JSON_UNESCAPED_UNICODE));
 }
 
