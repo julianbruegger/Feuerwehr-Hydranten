@@ -4,6 +4,9 @@ Erzeugt statische Hydranten- und Barrieren-Kacheln aus einem OSM-Extrakt.
 
 Eingabe:  GeoJSON-Sequence von `osmium export` (siehe build.sh) und das
           .poly-File des Extrakts (Geofabrik), das die Abdeckung definiert.
+          Mehrere Länder: .poly-Files kommagetrennt angeben – die Abdeckung ist
+          dann die Vereinigung aller Polygone, Grenzkacheln zwischen zwei
+          Ländern sind damit ebenfalls statisch.
 Ausgabe:  <out>/hydrants/{x}_{y}.json   {"v": V, "elements": [{id, lat, lon, tags}]}
           <out>/barriers/{x}_{y}.json   {"v": V, "w": [...], "r": [...], "p": [...]}
           <out>/manifest.json           Version + Liste der abgedeckten Kacheln
@@ -12,7 +15,7 @@ Kachel-Key "x_y" = floor(lng / 0.05) _ floor(lat / 0.05) – identisch zu
 app.js und php/includes/hydrant_tiles.php.
 
 Es werden nur Kacheln geschrieben, die vollständig im Extrakt-Polygon liegen.
-Für Grenzkacheln fehlen Daten jenseits der Grenze; sie lädt die App weiterhin
+Für Kacheln am Rand der abgedeckten Länder fehlen Daten jenseits der Grenze; sie lädt die App weiterhin
 über /api/hydrants.php (Overpass).
 
 Barrieren: w = Gewässer, r = Bahn, p = Brücken/Tunnel (Durchgänge). Jede Linie
@@ -28,6 +31,7 @@ import sys
 import time
 
 from shapely.geometry import MultiPolygon, Polygon, box
+from shapely.ops import unary_union
 from shapely.prepared import prep
 
 TILE_DEG = 0.05
@@ -68,6 +72,20 @@ def parse_poly(path):
         inner = [h for h in holes if shell.contains(Polygon(h))]
         polys.append(Polygon(outer, inner))
     return MultiPolygon(polys) if len(polys) > 1 else polys[0]
+
+
+# Geofabrik-Polygone benachbarter Länder liegen an der Grenze nicht exakt
+# aneinander. Schmale Lücken (< 2 × POLY_CLOSE_DEG, ~200 m) werden geschlossen,
+# damit Grenzkacheln nicht an Slivern scheitern.
+POLY_CLOSE_DEG = 0.001
+
+
+def parse_polys(paths):
+    """Vereinigung mehrerer .poly-Files (kommagetrennte Pfade)."""
+    areas = [parse_poly(p) for p in paths.split(',') if p]
+    if len(areas) == 1:
+        return areas[0]
+    return unary_union(areas).buffer(POLY_CLOSE_DEG).buffer(-POLY_CLOSE_DEG)
 
 
 def covered_tiles(area):
@@ -135,7 +153,7 @@ def add_line(barriers, kind, coords, wanted):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('geojsonseq', help='Ausgabe von osmium export -f geojsonseq')
-    ap.add_argument('poly', help='.poly-File des Extrakts')
+    ap.add_argument('poly', help='.poly-File des Extrakts (mehrere kommagetrennt)')
     ap.add_argument('out', help='Ausgabeverzeichnis')
     ap.add_argument('--osm-timestamp', default='', help='Datenstand des Extrakts (ISO 8601)')
     ap.add_argument('--min-hydrants', type=int, default=0,
@@ -143,7 +161,7 @@ def main():
     args = ap.parse_args()
 
     version = int(time.time())
-    wanted = covered_tiles(parse_poly(args.poly))
+    wanted = covered_tiles(parse_polys(args.poly))
     print(f'{len(wanted)} Kacheln vollständig im Extrakt', file=sys.stderr)
 
     hydrants = {}

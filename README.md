@@ -8,7 +8,7 @@
 
 ## ✨ Features
 
-- **🗺️ Live hydrant map** — Displays nearby fire hydrants on a full-screen [Leaflet](https://leafletjs.com/) map, sourced from OpenStreetMap (weekly static tiles for Switzerland, Overpass API elsewhere).
+- **🗺️ Live hydrant map** — Displays nearby fire hydrants on a full-screen [Leaflet](https://leafletjs.com/) map, sourced from OpenStreetMap (weekly static tiles for CH, LI, DE, AT, FR and IT, Overpass API elsewhere).
 - **📍 Two search modes** — Search from your **own GPS location** or from a manually **set fire position**.
 - **📏 Hose calculator** — Computes how many hose sections are required to reach the nearest hydrant, using real **road routing** (OSRM) and falling back to straight-line (haversine) distance when routing is unavailable.
 - **⚙️ Configurable** — Adjustable hose length (e.g. 20 m / 25 m) and search radius via a swipe-up bottom sheet.
@@ -106,8 +106,8 @@ The browser picks the source per tile:
 
 | Source | Used for | Notes |
 |---|---|---|
-| **Static tiles** `data/hydrants/{x}_{y}.json`, `data/barriers/{x}_{y}.json` | All tiles fully inside Switzerland | Built weekly from the Geofabrik OSM extract and served directly by Apache (no PHP, no Overpass). `data/manifest.json` lists the covered tiles and the data version. |
-| `GET /api/hydrants.php?tiles=x_y,…` | Border areas and abroad | Server cache `cache/tiles/*.json` (30 days fresh, stale fallback). Cold tiles are listed in `missing` and loaded from Overpass **after** the response; the client retries them with backoff. |
+| **Static tiles** `data/hydrants/{x}_{y}.json`, `data/barriers/{x}_{y}.json` | All tiles fully inside the covered countries (`tools/hydrant-data/countries.json`) | Built weekly from the Geofabrik OSM extract and served directly by Apache (no PHP, no Overpass). `data/manifest.json` lists the covered tiles and the data version. |
+| `GET /api/hydrants.php?tiles=x_y,…` | Areas outside the covered countries and the outer edge of the covered area | Server cache `cache/tiles/*.json` (30 days fresh, stale fallback). Cold tiles are listed in `missing` and loaded from Overpass **after** the response; the client retries them with backoff. |
 | Browser (IndexedDB) | Everything already seen | Shown instantly; static tiles refresh when the data version changes, API tiles after 7 days. |
 
 **Static data** is built and uploaded by [`.github/workflows/hydrant-data.yml`](.github/workflows/hydrant-data.yml)
@@ -115,10 +115,16 @@ The browser picks the source per tile:
 (needs `osmium-tool` and `pip install shapely`):
 
 ```bash
+# one country (add more by comma-separating the PBF and .poly files)
 curl -LO https://download.geofabrik.de/europe/switzerland-latest.osm.pbf
 curl -LO https://download.geofabrik.de/europe/switzerland.poly
 tools/hydrant-data/build.sh switzerland-latest.osm.pbf switzerland.poly data
 ```
+
+The covered countries are listed in [`tools/hydrant-data/countries.json`](tools/hydrant-data/countries.json)
+(Geofabrik path + minimum hydrant count as a sanity check). Add or remove an entry to change the coverage;
+the workflow builds one merged tile set and manifest. Mind the disk space on the hosting: every covered
+country adds its own tiles to `data/`.
 
 **Overpass** is only used for tiles outside the static data and always within a fixed time budget
 (the mirrors are queried staggered; the first valid answer wins — see `php/includes/overpass.php`),

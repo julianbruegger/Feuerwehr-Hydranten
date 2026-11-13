@@ -1,4 +1,4 @@
-# Statische Hydranten-/Barrieren-Kacheln für die ganze Schweiz.
+# Statische Hydranten-/Barrieren-Kacheln (Länder: tools/hydrant-data/countries.json).
 # Erzeugt und hochgeladen von .github/workflows/hydrant-data.yml
 # (hydrants/{x}_{y}.json, barriers/{x}_{y}.json, manifest.json).
 #
