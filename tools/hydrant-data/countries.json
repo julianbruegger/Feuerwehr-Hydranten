@@ -1,0 +1,8 @@
+[
+  {"id": "switzerland",   "path": "europe/switzerland",   "min_hydrants": 20000},
+  {"id": "liechtenstein", "path": "europe/liechtenstein", "min_hydrants": 20},
+  {"id": "germany",       "path": "europe/germany",       "min_hydrants": 50000},
+  {"id": "austria",       "path": "europe/austria",       "min_hydrants": 10000},
+  {"id": "france",        "path": "europe/france",        "min_hydrants": 50000},
+  {"id": "italy",         "path": "europe/italy",         "min_hydrants": 10000}
+]

@@ -1,8 +1,9 @@
 name: Build hydrant data
 
-# Erzeugt statische Hydranten- und Barrieren-Kacheln für die ganze Schweiz aus
-# dem Geofabrik-OSM-Extrakt und lädt sie nach data/ auf den Server. Die Karte
-# lädt diese Dateien direkt – ohne PHP und ohne Overpass (siehe Issue #27).
+# Erzeugt statische Hydranten- und Barrieren-Kacheln für alle Länder aus
+# tools/hydrant-data/countries.json (Geofabrik-OSM-Extrakte) und lädt sie nach
+# data/ auf den Server. Die Karte lädt diese Dateien direkt – ohne PHP und ohne
+# Overpass (siehe Issue #27). Länder hinzufügen/entfernen: countries.json ändern.
 
 on:
   schedule:
@@ -17,7 +18,7 @@ jobs:
   build-and-upload:
     runs-on: ubuntu-latest
     environment: Hostpoint
-    timeout-minutes: 30
+    timeout-minutes: 120
 
     steps:
       - name: Checkout
@@ -29,16 +30,24 @@ jobs:
           sudo apt-get install -y -q osmium-tool
           pip install 'shapely>=2,<3'
 
-      - name: Download Switzerland extract
+      - name: Download + filter country extracts
+        # Jedes Land einzeln: Roh-Extrakt laden, filtern, löschen – so bleibt der
+        # Platz auf dem Runner klein. Mindestanzahl pro Land schützt vor kaputten Daten.
         run: |
-          mkdir -p build
-          curl -fsSL --retry 3 -o build/switzerland.osm.pbf https://download.geofabrik.de/europe/switzerland-latest.osm.pbf
-          curl -fsSL --retry 3 -o build/switzerland.poly    https://download.geofabrik.de/europe/switzerland.poly
-          ls -lh build
+          mkdir -p build/countries
+          jq -r '.[] | [.path, .id, .min_hydrants] | @tsv' tools/hydrant-data/countries.json |
+          while IFS=$'\t' read -r path id min; do
+            tools/hydrant-data/fetch_country.sh "$path" "$id" build/countries "$min"
+          done
+          ls -lh build/countries
 
       - name: Build tiles
-        # Mindestanzahl schützt davor, kaputte/leere Daten hochzuladen
-        run: tools/hydrant-data/build.sh build/switzerland.osm.pbf build/switzerland.poly build/data 20000
+        run: |
+          IDS=$(jq -r '.[].id' tools/hydrant-data/countries.json)
+          PBFS=$(for id in $IDS; do printf 'build/countries/%s.osm.pbf,' "$id"; done); PBFS=${PBFS%,}
+          POLYS=$(for id in $IDS; do printf 'build/countries/%s.poly,' "$id"; done); POLYS=${POLYS%,}
+          MIN=$(jq '[.[].min_hydrants] | add' tools/hydrant-data/countries.json)
+          tools/hydrant-data/build.sh "$PBFS" "$POLYS" build/data "$MIN"
 
       - name: Summary
         run: |

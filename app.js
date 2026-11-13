@@ -47,7 +47,7 @@ async function serverProxyFetch(type, pos, radius) {
 // Kartenausschnitt und alle Radien denselben Cache.
 //
 // Quellen:
-//  1. Statische Kacheln /data/hydrants/{x}_{y}.json – ganze Schweiz, wöchentlich
+//  1. Statische Kacheln /data/hydrants/{x}_{y}.json – alle Länder aus countries.json, wöchentlich
 //     aus OSM erzeugt (.github/workflows/hydrant-data.yml). /data/manifest.json
 //     listet die abgedeckten Kacheln und die Datenversion.
 //  2. /api/hydrants.php – für alle übrigen Kacheln (Grenzgebiete, Ausland).
@@ -339,7 +339,7 @@ async function getHydrantTiles(keys, { onTile = null, force = false } = {}) {
 // Barrieren-Kacheln (Gewässer, Bahn, Brücken/Tunnel)
 // ─────────────────────────────────────────
 //
-// Innerhalb der Schweiz statisch (/data/barriers/{x}_{y}.json, Format
+// Innerhalb der statisch abgedeckten Länder (/data/barriers/{x}_{y}.json, Format
 // { w: [[lat, lon, lat, lon, …]], r: […], p: […] }), sonst über den Overpass-Proxy.
 
 const _barrierTileMem = new Map(); // key → Promise<tile | null>
